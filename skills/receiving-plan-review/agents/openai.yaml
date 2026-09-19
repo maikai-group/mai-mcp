@@ -1,0 +1,4 @@
+interface:
+  display_name: "Receiving Plan Review"
+  short_description: "Repair reviewed plans without revision drift"
+  default_prompt: "Use $receiving-plan-review to reconcile and fix all posted findings on this plan, then run a fresh blind review."

@@ -1,0 +1,14 @@
+{
+  "name": "mai-mcp",
+  "version": "1.0.0",
+  "description": "Install the mai-mcp persistent memory brain into a visible local checkout.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "mai-mcp": "bin/mai-mcp.mjs" },
+  "files": ["bin/mai-mcp.mjs", "README.md", "LICENSE"],
+  "engines": { "node": "^24.0.0" },
+  "repository": { "type": "git", "url": "git+https://github.com/maikai-group/mai-mcp.git" },
+  "homepage": "https://github.com/maikai-group/mai-mcp#readme",
+  "bugs": { "url": "https://github.com/maikai-group/mai-mcp/issues" },
+  "publishConfig": { "access": "public" }
+}

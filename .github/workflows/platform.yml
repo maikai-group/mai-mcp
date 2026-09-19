@@ -1,0 +1,152 @@
+# Plan 32b Task 7 — native platform matrix and Windows gates (spec §10).
+# The portable job runs the database-free subset on all three OSes; the
+# assembled public package is built once on macOS (the audited assembler keeps
+# its Bash/rsync/plutil boundary) and consumed on Windows without the private
+# assembler. Spec §14 gate 2 reads THIS workflow's conclusion at the frozen
+# release commit (Task 10 Step 3b).
+name: platform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: portable (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: ${{ matrix.os == 'windows-latest' && 'pwsh' || 'bash' }}
+    steps:
+      # Byte-exact gates need LF: .gitattributes pins eol=lf, and this guard
+      # keeps a runner-level autocrlf=true from converting before checkout.
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - name: Windows — the checkout must be LF (fingerprints hash raw bytes)
+        if: runner.os == 'Windows'
+        # Reads raw bytes of every fingerprinted artifact (derived from the
+        # checker, never a hand list); Select-String strips terminators and
+        # could never see a CR.
+        run: |
+          node -e "const fs=require('fs');const s=fs.readFileSync('scripts/check-skills.mjs','utf8');let bad=0;for(const m of s.matchAll(/path: '([^']+)'/g)){if(!fs.existsSync(m[1]))continue;if(fs.readFileSync(m[1]).includes(13)){console.error('CRLF checkout: '+m[1]);bad++;}}if(bad)process.exit(1);console.log('LF checkout: every pinned artifact is CR-free');"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run check:casts
+      - run: npm run check:read-budgets
+      - run: npm run check:skills
+      # The full database-free platform suite (Task 8 switched from the explicit
+      # subset once windows-acceptance.test.ts existed); DB-backed suites stay under VC1.
+      - run: npm run test:platform
+      - name: Windows — open-file janitor discriminator (real exclusive-open probe)
+        if: runner.os == 'Windows'
+        run: npx vitest run src/__tests__/review-scratch.test.ts -t "held open"
+      # Parsed under BOTH engines: pwsh 7 (the runner default) and Windows
+      # PowerShell 5.1 (the shipped floor). 5.1 is stricter — it rejected
+      # "$Name:" inside a string that pwsh accepted (run 34798205096) — and
+      # each error is printed with its line so the log names the construct.
+      - name: Windows — parse every shipped PowerShell script (pwsh 7)
+        if: runner.os == 'Windows'
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 scripts | ForEach-Object {
+            $e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e)
+            foreach ($x in $e) { Write-Output ("{0}:{1}:{2} {3}" -f $_.FullName, $x.Extent.StartLineNumber, $x.Extent.StartColumnNumber, $x.Message); $bad++ }
+          }
+          if ($bad) { Write-Error "$bad parse error(s)"; exit 1 }
+      - name: Windows — parse every shipped PowerShell script (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 scripts | ForEach-Object {
+            $e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$e)
+            foreach ($x in $e) { Write-Output ("{0}:{1}:{2} {3}" -f $_.FullName, $x.Extent.StartLineNumber, $x.Extent.StartColumnNumber, $x.Message); $bad++ }
+          }
+          if ($bad) { Write-Error "$bad parse error(s)"; exit 1 }
+      - name: POSIX — syntax-check every shipped shell wrapper
+        if: runner.os != 'Windows'
+        run: bash -n scripts/*.sh hooks/*.sh skills/plan-review-cycle/scripts/*.sh
+
+  assemble-public:
+    name: assemble public tree (macOS)
+    needs: portable
+    runs-on: macos-latest
+    outputs:
+      artifact: ${{ steps.assemble.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the assembler reads the VC5 receipt from commit 49fd391
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Assemble with the private maintainer assembler
+        id: assemble
+        # With a committed Shadow PC receipt the default fail-closed assembler
+        # runs and the artifact is release-eligible. Without one, only the
+        # explicit development escape hatch runs and the artifact is marked
+        # non-release: the Windows consumer still tests the bytes, but nothing
+        # from that path may be published.
+        run: |
+          git config --global user.email "ci@mai-mcp.invalid"
+          git config --global user.name "mai-mcp CI"
+          if ls docs/release/windows/windows-11-*.json >/dev/null 2>&1; then
+            bash scripts/release-public.sh "$RUNNER_TEMP/public"
+            echo "artifact=public-tree" >> "$GITHUB_OUTPUT"
+          else
+            bash scripts/release-public.sh --development-without-windows-receipt "$RUNNER_TEMP/public"
+            echo "artifact=public-tree-non-release" >> "$GITHUB_OUTPUT"
+          fi
+          rm -rf "$RUNNER_TEMP/public/.git"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.assemble.outputs.artifact }}
+          path: ${{ runner.temp }}/public
+          include-hidden-files: true
+          if-no-files-found: error
+
+  public-package:
+    name: public package (Windows)
+    needs: assemble-public
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.assemble-public.outputs.artifact }}
+          path: public
+      # The Windows consumer tests the downloaded bytes only; the private
+      # assembler is never invoked here.
+      - run: npm ci
+        working-directory: public
+      - run: npm run build
+        working-directory: public
+      - run: npm run check:skills
+        working-directory: public
+      - run: npm run test:platform
+        working-directory: public

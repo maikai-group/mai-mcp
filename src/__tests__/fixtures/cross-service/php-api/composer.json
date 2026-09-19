@@ -1,0 +1,6 @@
+{
+  "name": "mai/php-api",
+  "require": {
+    "guzzlehttp/guzzle": "^7.0"
+  }
+}

@@ -1,0 +1,45 @@
+#!/bin/sh
+# Fake `codex` for provider tests. TWO mode channels (review pass-4 B1):
+#  - login modes: the MAI_CODEX_FIXTURE env var — the detection probe is
+#    spawnSync with the full inherited process.env, so env works there.
+#  - exec modes: a SIDECAR FILE `mode` next to this script — provider spawns
+#    use the allowlist child env (decision 48797d3e), which strips
+#    MAI_CODEX_FIXTURE; an env selector would silently fall back to the ok
+#    default on every mode-switched case.
+# The RESULT contract is the -o file (stdout is progress noise — verified live
+# 2026-08-11); modes that answer consume stdin like the real CLI. NEVER touches
+# the network or the user's ChatGPT subscription.
+if [ "$1" = "login" ]; then
+  # `codex login status`: exit 0 when authed, non-zero when not (the detection probe).
+  case "${MAI_CODEX_FIXTURE:-ok}" in
+    loggedout) echo "Not logged in" >&2; exit 1 ;;
+    *)         echo "Logged in using ChatGPT"; exit 0 ;;
+  esac
+fi
+# exec mode — locate the -o and --output-schema arguments.
+OUT=""; SCHEMA=""; prev=""
+for a in "$@"; do
+  [ "$prev" = "-o" ] && OUT="$a"
+  [ "$prev" = "--output-schema" ] && SCHEMA="$a"
+  prev="$a"
+done
+# Sidecar-mode read. NEVER default this to envcheck — "an envcheck default
+# makes the AUTH SCRUB assertion a tautology" (pass-4 warning): a child that
+# reported its env by default would 'pass' the scrub test even when the mode
+# selector never arrived at all.
+MODE=$(cat "$(dirname "$0")/mode" 2>/dev/null || echo ok)
+case "$MODE" in
+  noread)    exit 1 ;;  # exits WITHOUT reading stdin -> EPIPE on a chunked write (plan-13 review B1 class)
+  stdinclose) echo "$$" > "$(dirname "$0")/pid"; exec 0<&-; sleep 5 ;;  # stdin CLOSED, child stays ALIVE past the 2s bound (pass-5 B2) — PID exposed for the kill assert
+  hang)      cat > /dev/null; sleep 5 ;;  # past the 2s test bound, not past vitest teardown (plan-13 review W1)
+  exit1)     cat > /dev/null; echo "stream error: not logged in" >&2; exit 1 ;;
+  noout)     cat > /dev/null; exit 0 ;;  # exit 0 but never writes the -o file
+  garbage)   cat > /dev/null; printf 'not json at all' > "$OUT" ;;
+  cwd)       cat > /dev/null; printf '{"cwd":"%s"}' "$PWD" > "$OUT" ;;  # recursion-guard assert
+  args)      cat > /dev/null; printf '{"argv":"%s"}' "$(printf '%s' "$*" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$OUT" ;;   # invocation-shape assert (argv is JSON-escaped: Windows paths carry backslashes)
+  stdinecho) printf '{"prompt":"%s"}' "$(cat)" > "$OUT" ;;              # stdin-prompt assert
+  schema)    cat > /dev/null; cp "$SCHEMA" "$OUT" ;;                    # --output-schema round-trip assert
+  envcheck)  cat > /dev/null; printf '{"openai":"%s","anthropicKey":"%s","anthropicToken":"%s","canary":"%s","home":"%s","path":"%s"}' \
+               "${OPENAI_API_KEY:-absent}" "${ANTHROPIC_API_KEY:-absent}" "${ANTHROPIC_AUTH_TOKEN:-absent}" "${MAI_TEST_CANARY_SECRET:-absent}" "${HOME:+present}" "${PATH:+present}" > "$OUT" ;;
+  ok|*)      cat > /dev/null; printf '{"ok":true,"n":3}' > "$OUT"; printf 'tokens used\n14,475\n' ;;
+esac

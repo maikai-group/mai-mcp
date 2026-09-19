@@ -1,0 +1,113 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generated stylesheet > generates a stable stylesheet for atlas 1`] = `
+[
+  "node",
+  "node",
+  "node.labels-on",
+  "node.hidden-kind",
+  "node.recent",
+  "node.heart",
+  "node[center = 1]",
+  "node:selected",
+  "edge",
+]
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for atlas 2`] = `
+{
+  "base": "#f8f7f2",
+  "field": "grid",
+  "fieldColor": "#ddd8c8",
+  "gradient": [
+    "rgba(255,255,255,0.9)",
+    "rgba(248,247,242,0.95)",
+    "#f1efe6",
+  ],
+  "moduleGlow": 0.35,
+}
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for observatory 1`] = `
+[
+  "node",
+  "node",
+  "node.labels-on",
+  "node.hidden-kind",
+  "node.recent",
+  "node.heart",
+  "node[center = 1]",
+  "node:selected",
+  "edge",
+]
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for observatory 2`] = `
+{
+  "base": "#03040a",
+  "field": "starfield",
+  "fieldColor": "#c7d2fe",
+  "gradient": [
+    "rgba(96,165,250,0.14)",
+    "rgba(9,12,28,0.7)",
+    "#03040a",
+  ],
+  "moduleGlow": 1.5,
+}
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for organism 1`] = `
+[
+  "node",
+  "node",
+  "node.labels-on",
+  "node.hidden-kind",
+  "node.recent",
+  "node.heart",
+  "node[center = 1]",
+  "node:selected",
+  "edge",
+]
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for organism 2`] = `
+{
+  "base": "#04100f",
+  "field": "none",
+  "fieldColor": "#0d3b38",
+  "gradient": [
+    "rgba(45,212,191,0.10)",
+    "rgba(6,20,24,0.65)",
+    "#04100f",
+  ],
+  "moduleGlow": 1,
+}
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for signal 1`] = `
+[
+  "node",
+  "node",
+  "node.labels-on",
+  "node.hidden-kind",
+  "node.recent",
+  "node.heart",
+  "node[center = 1]",
+  "node:selected",
+  "edge",
+]
+`;
+
+exports[`generated stylesheet > generates a stable stylesheet for signal 2`] = `
+{
+  "base": "#000000",
+  "field": "grid",
+  "fieldColor": "#1a1a1a",
+  "gradient": [
+    "rgba(0,0,0,0)",
+    "rgba(0,0,0,0)",
+    "#000000",
+  ],
+  "moduleGlow": 0,
+}
+`;

@@ -1,0 +1,11 @@
+-- Plan → board thread root (plan 21, spec 2026-08-12 §6). One board thread per
+-- plan-in-review: the first derived note posts thread-less and its id is
+-- written back here; every later note posts under this root, so each new
+-- verdict auto-supersedes the prior and the board shows ONE live line per plan.
+--
+-- Deliberately NO foreign key to agent_messages. The board is a
+-- non-authoritative layer; a hard FK would let board cleanup cascade into the
+-- tracker, which is the authoritative record. A dangling pointer is the
+-- accepted cost and is self-healed at post time (the root is probed first, and
+-- a missing root starts a fresh thread).
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS board_thread_id uuid;

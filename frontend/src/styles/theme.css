@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+
+/* be-water design tokens (spec §3). Deep-water base, teal→cyan flow accent,
+   per-kind hues, muted coral reserved for deny/retract only. */
+@theme {
+  --color-deep-950: #04100f;  /* abyss — page base */
+  --color-deep-900: #061418;  /* canvas base */
+  --color-deep-800: #0a2229;  /* raised surface */
+  --color-deep-700: #0d3b38;  /* hover / selected surface */
+  --color-flow-400: #2dd4bf;  /* accent start (teal) */
+  --color-flow-300: #22d3ee;  /* accent end (cyan) */
+  --color-kind-code: #2dd4bf;
+  --color-kind-schema: #f59e0b;
+  --color-kind-file: #60a5fa;
+  --color-kind-class: #a78bfa;
+  --color-kind-infra: #f472b6;
+  --color-kind-unknown: #94a3b8;
+  --color-deny: #f87171;      /* muted coral — deny/retract only */
+  --color-ink: #e2e8f0;
+  --color-ink-dim: #94a3b8;
+  --color-ink-faint: #64748b;
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Motion — high-impact, restrained: view/panel/toast entrances only. */
+@keyframes viewin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes panelin { from { opacity: 0; transform: scale(0.98) translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes toastin { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+
+html, body, #root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--color-deep-950);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}

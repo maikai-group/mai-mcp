@@ -1,0 +1,155 @@
+{
+  "frontend/src/components/MarkdownPanel.test.tsx": {
+    "as-assertion": 4
+  },
+  "frontend/src/lib/api.ts": {
+    "as-assertion": 2
+  },
+  "frontend/src/shell/destinations.ts": {
+    "as-assertion": 1
+  },
+  "frontend/src/views/home/Home.tsx": {
+    "as-assertion": 1
+  },
+  "frontend/src/views/profile/Profile.test.tsx": {
+    "as-assertion": 1
+  },
+  "frontend/src/views/review/Review.tsx": {
+    "as-assertion": 1
+  },
+  "frontend/src/views/roadmap/Roadmap.tsx": {
+    "as-assertion": 2
+  },
+  "src/__tests__/cli-exit-codes.test.ts": {
+    "as-assertion": 4
+  },
+  "src/__tests__/embeddings-local.test.ts": {
+    "as-assertion": 1,
+    "non-null assertion": 6
+  },
+  "src/__tests__/facts.test.ts": {
+    "as-assertion": 1,
+    "non-null assertion": 3
+  },
+  "src/__tests__/init-hooks.test.ts": {
+    "as-assertion": 2
+  },
+  "src/__tests__/managed-block.test.ts": {
+    "non-null assertion": 9
+  },
+  "src/__tests__/plans-findings.test.ts": {
+    "as-assertion": 2
+  },
+  "src/__tests__/stop-nudge.test.ts": {
+    "as-assertion": 3
+  },
+  "src/__tests__/upgrade.test.ts": {
+    "non-null assertion": 1
+  },
+  "src/__tests__/verify.test.ts": {
+    "as-assertion": 1
+  },
+  "src/__tests__/web-json-api.test.ts": {
+    "non-null assertion": 9
+  },
+  "src/__tests__/write-gate.test.ts": {
+    "as-assertion": 4,
+    "non-null assertion": 6
+  },
+  "src/capture/claude-code.ts": {
+    "as-assertion": 5
+  },
+  "src/capture/codex.ts": {
+    "as-assertion": 7
+  },
+  "src/capture/generic.ts": {
+    "as-assertion": 1
+  },
+  "src/capture/lines.ts": {
+    "as-assertion": 2
+  },
+  "src/cli.ts": {
+    "as-assertion": 2
+  },
+  "src/coordination/__tests__/board.test.ts": {
+    "as-assertion": 4
+  },
+  "src/coordination/board.ts": {
+    "as-assertion": 3
+  },
+  "src/coordination/claim-warn.ts": {
+    "as-assertion": 1
+  },
+  "src/coordination/index.ts": {
+    "as-assertion": 5
+  },
+  "src/decisions.ts": {
+    "as-assertion": 6
+  },
+  "src/embeddings.ts": {
+    "as-assertion": 1
+  },
+  "src/git/sync.ts": {
+    "as-assertion": 1
+  },
+  "src/graph/extractors/glue.ts": {
+    "as-assertion": 4
+  },
+  "src/graph/extractors/ts.ts": {
+    "as-assertion": 1
+  },
+  "src/graph/extractors/ue-module.ts": {
+    "as-assertion": 1
+  },
+  "src/index.ts": {
+    "as-assertion": 34
+  },
+  "src/ingest.ts": {
+    "as-assertion": 8
+  },
+  "src/llm/claude-code.ts": {
+    "as-assertion": 1
+  },
+  "src/notes.ts": {
+    "as-assertion": 2
+  },
+  "src/plans.ts": {
+    "as-assertion": 3
+  },
+  "src/scripts/ingest-codex.ts": {
+    "as-assertion": 2
+  },
+  "src/scripts/init.ts": {
+    "as-assertion": 2
+  },
+  "src/scripts/llm-consent.ts": {
+    "as-assertion": 1
+  },
+  "src/scripts/stop-nudge.ts": {
+    "as-assertion": 1
+  },
+  "src/scripts/sync-commits.ts": {
+    "as-assertion": 1
+  },
+  "src/scripts/upgrade.ts": {
+    "as-assertion": 2
+  },
+  "src/scripts/verify.ts": {
+    "as-assertion": 2
+  },
+  "src/summarize.ts": {
+    "as-assertion": 5
+  },
+  "src/topics.ts": {
+    "as-assertion": 2
+  },
+  "src/validate-params.ts": {
+    "as-assertion": 1
+  },
+  "src/web-server.ts": {
+    "as-assertion": 9
+  },
+  "src/write-gate.ts": {
+    "as-assertion": 4
+  }
+}

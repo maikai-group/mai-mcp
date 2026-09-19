@@ -1,0 +1,22 @@
+#!/bin/sh
+# Fake `claude` for provider tests — mode-switched via a SIDECAR FILE `mode`
+# next to this script (review pass-4 B1): provider spawns use the allowlist
+# child env (decision 48797d3e), which strips MAI_CC_FIXTURE — an env selector
+# would silently fall back to the ok default on every case. NEVER default the
+# mode to envcheck: "an envcheck default makes the AUTH SCRUB assertion a
+# tautology" (pass-4 warning). Modes that answer consume stdin like the real
+# CLI. NEVER touches network/subscription.
+MODE=$(cat "$(dirname "$0")/mode" 2>/dev/null || echo ok)
+case "$MODE" in
+  noread)  exit 1 ;;  # exits WITHOUT reading stdin → EPIPE on a chunked write (review B1)
+  stdinclose) echo "$$" > "$(dirname "$0")/pid"; exec 0<&-; sleep 5 ;;  # stdin CLOSED, child stays ALIVE past the 2s bound (pass-5 B2) — PID exposed for the kill assert
+  hang)    cat > /dev/null; sleep 5 ;;  # 5s not 30 — past the 2s test timeout, not past vitest teardown (review W1)
+  exit1)   cat > /dev/null; exit 1 ;;
+  cwd)     cat > /dev/null; printf '{"is_error":false,"result":"{\\"cwd\\":\\"%s\\"}"}\n' "$PWD" ;;  # recursion-guard assert (review B3)
+  args)    cat > /dev/null; printf '{"is_error":false,"result":"{\\"argv\\":\\"%s\\"}"}\n' "$*" ;;   # --model passthrough assert (review W2)
+  envcheck) cat > /dev/null; printf '{"is_error":false,"result":"{\\"key\\":\\"%s\\",\\"token\\":\\"%s\\",\\"openai\\":\\"%s\\",\\"canary\\":\\"%s\\",\\"home\\":\\"%s\\",\\"path\\":\\"%s\\"}"}\n' "${ANTHROPIC_API_KEY:-absent}" "${ANTHROPIC_AUTH_TOKEN:-absent}" "${OPENAI_API_KEY:-absent}" "${MAI_TEST_CANARY_SECRET:-absent}" "${HOME:+present}" "${PATH:+present}" ;;  # allowlist-shape assert (decision 48797d3e)
+  error)   cat > /dev/null; printf '%s\n' '{"is_error":true,"result":"declined"}' ;;
+  fence)   cat > /dev/null; printf '%s\n' '{"is_error":false,"result":"Here you go:\n```json\n{\"ok\":true}\n```"}' ;;
+  garbage) cat > /dev/null; echo 'not json at all' ;;
+  ok|*)    cat > /dev/null; printf '%s\n' '{"is_error":false,"result":"{\"ok\":true,\"n\":3}"}' ;;
+esac

@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "bash scripts/backup.sh" }] }
+    ]
+  }
+}

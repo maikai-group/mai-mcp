@@ -1,0 +1,9 @@
+# Byte-exact gates (fingerprints, multi-line needles, tree hashes) read the
+# working tree, so every checkout — including GitHub's Windows runners, where
+# Git for Windows converts on checkout by default — must produce LF bytes.
+* text=auto eol=lf
+*.png binary
+*.wasm binary
+*.tgz binary
+*.jpg binary
+*.ico binary

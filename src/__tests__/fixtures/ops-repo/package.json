@@ -1,0 +1,8 @@
+{
+  "name": "ops-repo-fixture",
+  "private": true,
+  "scripts": {
+    "backup": "bash scripts/backup.sh",
+    "start": "node server.js"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "FriendlyName": "SampleUE",
+  "Modules": [
+    { "Name": "SampleUE", "Type": "Runtime" },
+    { "Name": "SampleUEEditor", "Type": "Editor" }
+  ]
+}

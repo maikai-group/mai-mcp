@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.mai.review-tmp-janitor</string>
+  <!-- TEMPLATE: install-janitor.sh renders the absolute node and helper paths at install time. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>node</string>
+    <string>review-scratch.mjs</string>
+    <string>prune</string>
+    <string>--days</string>
+    <string>7</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>10</integer></dict>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: mai-brain-pg
+    # Stall observability (2026-07-14 freeze fix): name the trigger when a
+    # query blocks — lock waits + any statement over 5s land in docker logs.
+    # Also applied live via ALTER SYSTEM (pg-data/postgresql.auto.conf).
+    command:
+      - postgres
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_min_duration_statement=5000
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      # Loopback only — never bind 0.0.0.0.
+      - "127.0.0.1:54334:5432"
+    volumes:
+      - ./pg-data:/var/lib/postgresql/data

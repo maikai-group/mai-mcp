@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maikai-group/mai-mcp/scripts/windows/receipt-schema.json",
+  "title": "mai-mcp Shadow PC acceptance receipt",
+  "description": "A redacted, releasable record of one native Windows 11 acceptance run. Booleans, versions and hashes only: no path, user, error or free-text field exists, so a failing run cannot be recorded here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "platform", "versions", "release", "automated", "manual", "scheduledPersistence", "timestamps"],
+  "properties": {
+    "schema": { "const": 1 },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "osBuild", "architecture", "nonAdmin"],
+      "properties": {
+        "os": { "const": "Windows 11" },
+        "osBuild": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$" },
+        "architecture": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "nonAdmin": { "const": true }
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "npm", "git", "docker", "claude", "codex"],
+      "properties": {
+        "node": { "type": "string", "pattern": "^v24\\.[0-9]+\\.[0-9]+$" },
+        "npm": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+" },
+        "git": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+" },
+        "docker": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+" },
+        "claude": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+" },
+        "codex": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewedSha", "runtimeVersion", "installerVersion", "runtimeTreeSha256", "installerPackageSha256"],
+      "properties": {
+        "reviewedSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "runtimeVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+" },
+        "installerVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+" },
+        "runtimeTreeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "installerPackageSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "automated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installerExistingCheckout", "setup", "database", "migrations",
+        "verifySmoke", "mcpSurface", "wiring", "dashboard",
+        "scratchEndCleanup", "scratchPrune", "janitorSchedule",
+        "backupRestore", "backupSchedule", "rerunIdempotent"
+      ],
+      "properties": {
+        "installerExistingCheckout": { "type": "boolean" },
+        "setup": { "type": "boolean" },
+        "database": { "type": "boolean" },
+        "migrations": { "type": "boolean" },
+        "verifySmoke": { "type": "boolean" },
+        "mcpSurface": { "type": "boolean" },
+        "wiring": { "type": "boolean" },
+        "dashboard": { "type": "boolean" },
+        "scratchEndCleanup": { "type": "boolean" },
+        "scratchPrune": { "type": "boolean" },
+        "janitorSchedule": { "type": "boolean" },
+        "backupRestore": { "type": "boolean" },
+        "backupSchedule": { "type": "boolean" },
+        "rerunIdempotent": { "type": "boolean" }
+      }
+    },
+    "manual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claudeRestarted", "claudePrime", "claudeCapture", "claudeProviderStatus", "claudeHooksLive",
+        "codexRestarted", "codexPrime", "codexCapture", "codexProviderStatus", "codexNotifyLive"
+      ],
+      "properties": {
+        "claudeRestarted": { "type": "boolean" },
+        "claudePrime": { "type": "boolean" },
+        "claudeCapture": { "type": "boolean" },
+        "claudeProviderStatus": { "type": "boolean" },
+        "claudeHooksLive": { "type": "boolean" },
+        "codexRestarted": { "type": "boolean" },
+        "codexPrime": { "type": "boolean" },
+        "codexCapture": { "type": "boolean" },
+        "codexProviderStatus": { "type": "boolean" },
+        "codexNotifyLive": { "type": "boolean" }
+      }
+    },
+    "scheduledPersistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskName", "installed", "restartedAfterKill", "survivedSignOutSignIn", "tokenAbsent", "uninstalled"],
+      "properties": {
+        "taskName": { "const": "mai-mcp-dashboard" },
+        "installed": { "type": "boolean" },
+        "restartedAfterKill": { "type": "boolean" },
+        "survivedSignOutSignIn": { "type": "boolean" },
+        "tokenAbsent": { "type": "boolean" },
+        "uninstalled": { "type": "boolean" }
+      }
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automatedCompletedAt", "manualCompletedAt"],
+      "properties": {
+        "automatedCompletedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "manualCompletedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{"type":"user","sessionId":"seg-claude-fixture","timestamp":"2026-08-01T00:00:00Z","message":{"content":[{"type":"text","text":"start"}]}}
+{"type":"assistant","timestamp":"2026-08-01T00:01:00Z","message":{"model":"claude-fable-5","content":[{"type":"thinking","thinking":"first thoughts"},{"type":"text","text":"hi"}]}}
+{"type":"assistant","timestamp":"2026-08-01T00:02:00Z","message":{"content":[{"type":"thinking","thinking":"more thoughts"}]}}
+{"type":"user","timestamp":"2026-08-02T02:00:00Z","message":{"content":[{"type":"text","text":"back after a day"}]}}
+{"type":"user","timestamp":"2026-08-02T02:10:00Z","isCompactSummary":true,"compactMetadata":{"trigger":"manual"},"message":{"content":[{"type":"text","text":"compacted summary"}]}}
+{"type":"assistant","timestamp":"2026-08-02T02:11:00Z","message":{"content":[{"type":"thinking","thinking":"post-compact"}]}}

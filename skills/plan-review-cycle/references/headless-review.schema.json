@@ -1,0 +1,60 @@
+{
+  "title": "Opposite-harness plan review sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_id", "plan_sha", "breadth", "verdict", "summary", "findings"],
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_sha": {
+      "type": "string",
+      "minLength": 7
+    },
+    "breadth": {
+      "type": "string",
+      "enum": ["broad", "delta", "clearance"]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["approved", "blocked", "scope_escape"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "evidence", "recommendation", "path", "line"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "warning", "note"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recommendation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": ["string", "null"]
+          },
+          "line": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

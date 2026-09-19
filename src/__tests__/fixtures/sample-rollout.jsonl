@@ -1,0 +1,14 @@
+{"timestamp":"2026-07-09T10:00:00.000Z","type":"session_meta","payload":{"type":"session_meta","id":"11111111-2222-3333-4444-555555555555","cwd":"/tmp/mai-fixture-repo","originator":"Codex CLI","cli_version":"0.144.0"}}
+{"timestamp":"2026-07-09T10:00:01.000Z","type":"turn_context","payload":{"cwd":"/tmp/mai-fixture-repo","model":"gpt-5.6-sol"}}
+{"timestamp":"2026-07-09T10:00:02.000Z","type":"event_msg","payload":{"type":"user_message","message":"add the thing and run the tests"}}
+{"timestamp":"2026-07-09T10:00:03.000Z","type":"response_item","payload":{"type":"reasoning","id":"r1","summary":[{"type":"summary_text","text":"Considering two approaches; picking the additive one."}],"encrypted_content":"zzz"}}
+{"timestamp":"2026-07-09T10:00:04.000Z","type":"response_item","payload":{"type":"reasoning","id":"r2","summary":[],"encrypted_content":"zzz"}}
+{"timestamp":"2026-07-09T10:00:05.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"injected permissions text — must not count as a message"}]}}
+{"timestamp":"2026-07-09T10:00:06.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"npm test\",\"workdir\":\"/tmp/mai-fixture-repo\"}"}}
+{"timestamp":"2026-07-09T10:00:07.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"Process exited with code 0\nOutput:\n Test Files  2 passed (2)\n      Tests  10 passed (10)\n"}}
+{"timestamp":"2026-07-09T10:00:08.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"git commit -m 'feat: thing'\"}"}}
+{"timestamp":"2026-07-09T10:00:09.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c2","output":"[main abc1234] feat: thing\n 1 file changed, 2 insertions(+)\nexited with code 0"}}
+{"timestamp":"2026-07-09T10:00:10.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c3","input":"const x = 1;"}}
+{"timestamp":"2026-07-09T10:00:11.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c3","output":"[{\"type\":\"input_text\",\"text\":\"Script completed\"}]"}}
+{"timestamp":"2026-07-09T10:00:12.000Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"c4","success":true,"changes":{"/tmp/mai-fixture-repo/src/a.ts":{"type":"add","content":"export const a = 1;\n"},"/tmp/mai-fixture-repo/src/b.py":{"type":"update","unified_diff":"--- a\n+++ b\n-old\n+new"}}}}
+{"timestamp":"2026-07-09T10:00:13.000Z","type":"event_msg","payload":{"type":"agent_message","message":"Done — tests green, committed."}}

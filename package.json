@@ -1,0 +1,82 @@
+{
+  "name": "mai-mcp",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Multi-project brain MCP server: write-gated decisions, lessons, and memory edges, pinned to one project per server instance.",
+  "type": "module",
+  "private": true,
+  "main": "build/index.js",
+  "bin": {
+    "mai-mcp": "build/entry.js",
+    "mai": "build/entry.js",
+    "mai-brain-web": "build/web-server.js"
+  },
+  "scripts": {
+    "build": "node scripts/setup-runtime.mjs --check && tsc && node scripts/setup-runtime.mjs --copy && node scripts/stamp-build.mjs",
+    "build:setup-runtime": "node scripts/setup-runtime.mjs --write",
+    "check:setup-runtime": "node scripts/setup-runtime.mjs --check",
+    "build:web": "cd frontend && npm ci && npm run build",
+    "start": "node build/index.js",
+    "dev": "tsc --watch --noEmit",
+    "test": "vitest run && npm --prefix frontend run test",
+    "test:platform": "vitest run src/__tests__/platform-commands.test.ts src/__tests__/platform-processes.test.ts src/__tests__/platform-paths.test.ts src/__tests__/platform-locks.test.ts src/__tests__/hook-wiring.test.ts src/__tests__/hook-runner.test.ts src/__tests__/setup.test.ts src/__tests__/setup-runtime.test.ts src/__tests__/database-setup.test.ts src/__tests__/db-init.test.ts src/__tests__/installer.test.ts src/__tests__/codex-profile.test.ts src/__tests__/capture-codex.test.ts src/capture/__tests__/segment.test.ts src/__tests__/skills.test.ts src/__tests__/llm-claude-code.test.ts src/__tests__/llm-codex-cli.test.ts src/__tests__/llm-provider.test.ts src/__tests__/llm-consent.test.ts src/__tests__/dashboard.test.ts src/__tests__/dashboard-persistence.test.ts src/__tests__/review-scratch.test.ts src/__tests__/windows-maintenance.test.ts src/__tests__/backup.test.ts src/__tests__/windows-acceptance.test.ts src/__tests__/fake-tool.test.ts src/__tests__/graph-watch.test.ts src/__tests__/graph-watch-cli.test.ts",
+    "acceptance:windows": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/windows/acceptance.ps1",
+    "test:watch": "vitest",
+    "check:casts": "node scripts/check-no-casts.mjs",
+    "check:read-budgets": "node scripts/check-read-budgets.mjs",
+    "check:operator-tasks": "node scripts/check-operator-tasks.mjs",
+    "db:init": "node build/scripts/db-init.js",
+    "create-project": "node build/scripts/create-project.js",
+    "remap:git-history": "node build/scripts/remap-git-history.js",
+    "sync:skill-blocks": "node scripts/sync-skill-blocks.mjs",
+    "check:skills": "node scripts/check-skills.mjs",
+    "setup": "node src/scripts/setup.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
+    "@types/pg": "^8.20.0",
+    "cross-spawn": "7.0.6",
+    "diff": "^9.0.0",
+    "dotenv": "^16.4.0",
+    "mysql2": "3.24.2",
+    "openai": "^6.34.0",
+    "pg": "^8.20.0",
+    "tree-sitter-bash": "^0.25.1",
+    "tree-sitter-cpp": "^0.23.4",
+    "tree-sitter-php": "0.24.2",
+    "tree-sitter-python": "^0.25.0",
+    "typescript": "^5.6.0",
+    "web-tree-sitter": "~0.25.10"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/cross-spawn": "6.0.6",
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": "^24.0.0"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^3.8.1"
+  },
+  "overrides": {
+    "sharp": "0.35.4"
+  },
+  "allowScripts": {
+    "@tree-sitter-grammars/tree-sitter-kotlin@1.1.0": true,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "onnxruntime-node@1.21.0": true,
+    "protobufjs@7.6.5": true,
+    "tree-sitter-bash@0.25.1": true,
+    "tree-sitter-c@0.23.6": true,
+    "tree-sitter-cpp@0.23.4": true,
+    "tree-sitter-php@0.24.2": true,
+    "tree-sitter-python@0.25.0": true
+  }
+}

@@ -1,0 +1,70 @@
+/* be-water prose styling for rendered markdown panels. */
+.mai-prose {
+  color: var(--color-ink);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.mai-prose h1,
+.mai-prose h2,
+.mai-prose h3 {
+  color: var(--color-ink);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.1em 0 0.5em;
+}
+.mai-prose h1 { font-size: 1.15rem; }
+.mai-prose h2 { font-size: 1.02rem; color: var(--color-flow-300); }
+.mai-prose h3 { font-size: 0.94rem; color: var(--color-ink-dim); }
+.mai-prose p { margin: 0.5em 0; }
+.mai-prose a { color: var(--color-flow-300); text-decoration: underline; text-underline-offset: 2px; }
+.mai-prose a:hover { color: var(--color-flow-400); }
+.mai-prose ul,
+.mai-prose ol { margin: 0.5em 0; padding-left: 1.2em; }
+.mai-prose li { margin: 0.2em 0; }
+.mai-prose li::marker { color: var(--color-flow-400); }
+.mai-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--color-deep-800);
+  color: var(--color-flow-300);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.mai-prose pre {
+  background: var(--color-deep-800);
+  border: 1px solid var(--color-deep-700);
+  border-radius: 8px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  margin: 0.7em 0;
+}
+.mai-prose pre code {
+  background: none;
+  color: var(--color-ink);
+  padding: 0;
+}
+.mai-prose strong { color: var(--color-ink); font-weight: 600; }
+.mai-prose em { color: var(--color-ink-dim); }
+.mai-prose blockquote {
+  border-left: 2px solid var(--color-flow-400);
+  padding-left: 0.8em;
+  color: var(--color-ink-dim);
+  margin: 0.6em 0;
+}
+.mai-prose hr { border: none; border-top: 1px solid var(--color-deep-700); margin: 1em 0; }
+.mai-prose table { border-collapse: collapse; margin: 0.6em 0; font-size: 0.85em; }
+.mai-prose th,
+.mai-prose td { border: 1px solid var(--color-deep-700); padding: 0.35em 0.6em; text-align: left; }
+.mai-prose th { color: var(--color-ink-dim); font-weight: 600; }
+
+/* Graph-only prose scope (plan 29 R3): rebinds the variables .mai-prose already
+   consumes to the Graph's inherited theme tokens. No other markdown panel is
+   affected — non-Graph callers never carry this class. */
+.mai-prose.graph-prose {
+  --color-ink: var(--graph-text);
+  --color-ink-dim: var(--graph-text-dim);
+  --color-flow-300: var(--graph-accent);
+  --color-flow-400: var(--graph-accent);
+  --color-deep-800: var(--graph-panel);
+  --color-deep-700: var(--graph-border);
+}

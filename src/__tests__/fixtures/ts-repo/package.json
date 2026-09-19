@@ -1,0 +1,7 @@
+{
+  "name": "ts-repo-fixture",
+  "private": true,
+  "dependencies": {
+    "expo-router": "^3.0.0"
+  }
+}
