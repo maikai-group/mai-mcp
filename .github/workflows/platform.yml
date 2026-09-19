@@ -100,8 +100,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Assemble with the private maintainer assembler
+      - name: Prepare the public tree
         id: assemble
+        # An already assembled public checkout has a manifest and deliberately
+        # omits the private assembler. Export its tracked bytes for the same
+        # Windows package checks; never include installed dependencies.
         # With a committed Shadow PC receipt the default fail-closed assembler
         # runs and the artifact is release-eligible. Without one, only the
         # explicit development escape hatch runs and the artifact is marked
@@ -110,7 +113,11 @@ jobs:
         run: |
           git config --global user.email "ci@mai-mcp.invalid"
           git config --global user.name "mai-mcp CI"
-          if ls docs/release/windows/windows-11-*.json >/dev/null 2>&1; then
+          if [ -f release-manifest.json ] && [ ! -e scripts/release-public.sh ]; then
+            mkdir -p "$RUNNER_TEMP/public"
+            git archive HEAD | tar -x -C "$RUNNER_TEMP/public"
+            echo "artifact=public-tree" >> "$GITHUB_OUTPUT"
+          elif ls docs/release/windows/windows-11-*.json >/dev/null 2>&1; then
             bash scripts/release-public.sh "$RUNNER_TEMP/public"
             echo "artifact=public-tree" >> "$GITHUB_OUTPUT"
           else
