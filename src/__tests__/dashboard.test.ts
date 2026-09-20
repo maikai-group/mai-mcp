@@ -332,6 +332,7 @@ describe('dashboard environment boundary', () => {
       fs.mkdirSync(build); fs.mkdirSync(bin);
       fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(fixture, 'node_modules'));
       const source = fs.readFileSync(path.join(ROOT, 'src', 'env.ts'), 'utf8');
+      fs.copyFileSync(path.join(ROOT, 'build', 'automation-command.js'), path.join(build, 'automation-command.js'));
       fs.writeFileSync(path.join(build, 'env.js'), ts.transpileModule(source, {
         compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
       }).outputText);
@@ -370,6 +371,7 @@ describe('dashboard environment boundary', () => {
       fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(fixture, 'node_modules'));
       fs.writeFileSync(path.join(fixture, 'package.json'), '{"type":"module"}\n');
       fs.copyFileSync(path.join(ROOT, 'build', 'env.js'), path.join(build, 'env.js'));
+      fs.copyFileSync(path.join(ROOT, 'build', 'automation-command.js'), path.join(build, 'automation-command.js'));
       const serverSource = fs.readFileSync(path.join(ROOT, 'build', 'web-server.js'), 'utf8');
       fs.writeFileSync(path.join(build, 'web-server.js'), serverSource);
       const parsed = ts.createSourceFile('web-server.js', serverSource, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);

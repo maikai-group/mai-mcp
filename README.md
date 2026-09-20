@@ -267,6 +267,8 @@ installs the newly selected one. Run `mai verify <slug>` afterwards.
 - [Cross-project references](docs/configuration.md#cross-project-references-operator-only) —
   opt-in, read-only sharing between two separate products' brains: `mai link`
   plus `mai share`, one item at a time, revocable and audited.
+- [Automation contract](docs/automation-contract.md) — finite JSON commands for
+  schema setup, project registration and targeted transcript ingest.
 - [Integration contract](docs/conductor-machine-contract.md) — machine-readable
   run receipts and stored artifacts for external tools.
 - [Security policy][security] · [Contributing][contributing] · [MIT license][license]

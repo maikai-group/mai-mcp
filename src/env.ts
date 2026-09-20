@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
+import { isAutomationInvocation } from './automation-command.js';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +25,7 @@ export function shouldLoadCheckoutEnv(argv: readonly string[], moduleDir: string
   };
   const entryPath = canonical(entry);
   const isCli = ['entry.js', 'cli.js'].some(name => entryPath === canonical(path.resolve(moduleDir, name)));
+  if (isCli && isAutomationInvocation(argv.slice(2))) return false;
   const privateRun = isCli && argv[2] === 'dashboard' && argv[3] === 'run'
     && argv.slice(4).includes('--env-file');
   const privateServer = entryPath === canonical(path.resolve(moduleDir, 'web-server.js'))

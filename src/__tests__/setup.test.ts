@@ -914,6 +914,7 @@ describe('route parity — real source and compiled entry, rigged to fail in Pre
     mkdirSync(path.join(scratch, 'build', 'scripts'), { recursive: true });
     cpSync(path.join(REPO_ROOT, 'src', 'scripts', 'setup.ts'), path.join(scratch, 'src', 'scripts', 'setup.ts'));
     cpSync(path.join(REPO_ROOT, 'build', 'entry.js'), path.join(scratch, 'build', 'entry.js'));
+    cpSync(path.join(REPO_ROOT, 'build', 'automation-command.js'), path.join(scratch, 'build', 'automation-command.js'));
     cpSync(path.join(REPO_ROOT, 'build', 'scripts', 'setup.js'), path.join(scratch, 'build', 'scripts', 'setup.js'));
     for (const directory of ['src', 'build']) {
       for (const name of ['setup-runtime.generated.mjs', 'setup-runtime.generated.d.mts', 'setup-runtime.LICENSE.txt']) {

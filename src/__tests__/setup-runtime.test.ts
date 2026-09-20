@@ -48,6 +48,7 @@ function coldFixture(route: string): string {
     for (const name of ARTIFACTS) copy(root, `src/scripts/${name}`);
   } else {
     copy(root, 'build/entry.js');
+    copy(root, 'build/automation-command.js');
     copy(root, 'build/scripts/setup.js');
     for (const name of ARTIFACTS) copy(root, `build/scripts/${name}`);
   }

@@ -548,7 +548,7 @@ const WORKFLOW_FINGERPRINTS = [
   },
   {
     path: 'scripts/release-public.sh',
-    sha256: 'cf465f810a281b41212e37998b7fa3dfe7af6f68f4594cb58a70c0b9e32eb461',
+    sha256: 'f4619aec4be268ec734e5ec2194cf29491ad11969a9887df3f6a67763667462c',
     required: false,
   },
 ];

@@ -399,6 +399,10 @@ export async function parseJsonl(jsonlPath: string): Promise<ParsedSession> {
  * commit/line counters stay 0. The optional Haiku summary + candidate-decision
  * extraction run separately in the ingest CLI.
  */
+export class SessionProjectMismatchError extends Error {
+  constructor() { super('Session belongs to another project'); }
+}
+
 export async function writeSession(parsed: ParsedSession, originalSessionId?: string): Promise<string> {
   const sid = originalSessionId ?? parsed.sessionId;
   if (!sid) throw new Error("No session id (neither the override param nor a JSONL sessionId).");
@@ -436,6 +440,7 @@ export async function writeSession(parsed: ParsedSession, originalSessionId?: st
        files_read = EXCLUDED.files_read,
        files_written = EXCLUDED.files_written,
        files_edited = EXCLUDED.files_edited
+     WHERE code_sessions.project_id = EXCLUDED.project_id
      RETURNING id`,
     [
       projectId,
@@ -451,6 +456,7 @@ export async function writeSession(parsed: ParsedSession, originalSessionId?: st
       parsed.filesEdited,
     ]
   );
+  if (sessionRes.rows.length === 0) throw new SessionProjectMismatchError();
   const sessionId = sessionRes.rows[0].id;
 
   // --- Project stats (total_commits reflects sync-commits, not this ingest)
