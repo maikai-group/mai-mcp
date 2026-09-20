@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="title desc">
-  <title id="title">mai-mcp — persistent project memory</title>
-  <desc id="desc">Your next session shouldn't start from zero. Flowing lines connect sessions through shared decisions, lessons, and code context.</desc>
+  <title id="title">mai-mcp — project memory, skills, and agent communication</title>
+  <desc id="desc">A shared brain for Claude Code and Codex. Project memory, dedicated skills, and a shared board connect agents across sessions.</desc>
   <defs>
     <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#071b23"/><stop offset="1" stop-color="#102f35"/></linearGradient>
     <linearGradient id="river"><stop stop-color="#3cbdbb" stop-opacity="0.08"/><stop offset="0.55" stop-color="#6de5cc" stop-opacity="0.9"/><stop offset="1" stop-color="#83bce6" stop-opacity="0.25"/></linearGradient>
@@ -23,21 +23,21 @@
       <path d="M0 18C8 4 18 32 27 18S46 4 54 18" fill="none" stroke="#6de5cc" stroke-width="4" stroke-linecap="round"/>
       <text x="70" y="28" fill="#f0faf7" font-size="32" font-weight="700" letter-spacing="-1">mai-mcp</text>
     </g>
-    <text x="58" y="174" fill="#f0faf7" font-size="53" font-weight="700" letter-spacing="-1.8">Your next session</text>
-    <text x="58" y="238" fill="#f0faf7" font-size="53" font-weight="700" letter-spacing="-1.8">shouldn’t start from zero.</text>
-    <text x="61" y="290" fill="#a9c8ca" font-size="23">Project memory for Claude Code + Codex.</text>
+    <text x="58" y="174" fill="#f0faf7" font-size="53" font-weight="700" letter-spacing="-1.8">A shared brain for</text>
+    <text x="58" y="238" fill="#f0faf7" font-size="53" font-weight="700" letter-spacing="-1.8">Claude Code and Codex.</text>
+    <text x="61" y="290" fill="#a9c8ca" font-size="23">Project memory · Skills · Agent communication</text>
     <rect x="60" y="359" width="260" height="39" rx="19.5" fill="#133b40" stroke="#2f6867"/>
     <text x="80" y="384" fill="#a9eadc" font-size="15" font-weight="600" letter-spacing="0.6">LOCAL MEMORY · OPEN SOURCE</text>
     <text x="62" y="441" fill="#7da7aa" font-size="14" letter-spacing="1.1">ME + AI. BE WATER.</text>
     <g transform="translate(830 182)">
       <rect width="362" height="154" rx="18" fill="#0b242b" stroke="#40766f"/>
       <circle cx="30" cy="33" r="5" fill="#6de5cc"/>
-      <text x="47" y="39" fill="#b4d5d2" font-size="16" font-weight="600">CONTEXT THAT CARRIES FORWARD</text>
+      <text x="47" y="39" fill="#b4d5d2" font-size="16" font-weight="600">ONE PROJECT, SHARED CONTEXT</text>
       <path d="M24 57H338" stroke="#264950"/>
-      <text x="25" y="93" fill="#eef9f5" font-size="24" font-weight="600">Decisions. Lessons. Code.</text>
-      <text x="25" y="124" fill="#95b7b9" font-size="17">Ready for the next conversation.</text>
+      <text x="25" y="93" fill="#eef9f5" font-size="24" font-weight="600">Memory. Skills. Handoffs.</text>
+      <text x="25" y="124" fill="#95b7b9" font-size="17">Keep working from the same context.</text>
     </g>
-    <text x="829" y="111" fill="#8bb8b7" font-size="14" letter-spacing="1.6">SESSION 01</text>
-    <text x="1074" y="407" fill="#8bb8b7" font-size="14" letter-spacing="1.6">SESSION 02</text>
+    <text x="829" y="111" fill="#8bb8b7" font-size="14" letter-spacing="1.6">CLAUDE CODE</text>
+    <text x="1074" y="407" fill="#8bb8b7" font-size="14" letter-spacing="1.6">CODEX</text>
   </g>
 </svg>

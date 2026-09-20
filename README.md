@@ -1,6 +1,6 @@
 <!-- onboarding:start -->
 <p align="center">
-  <img src="docs/assets/mai-banner.svg" alt="mai-mcp — Your next session shouldn't start from zero. Persistent project memory for Claude Code and Codex." width="100%">
+  <img src="docs/assets/mai-banner.svg" alt="mai-mcp — A shared brain for Claude Code and Codex. Project memory, skills, and agent communication." width="100%">
 </p>
 
 <p align="center">
@@ -10,17 +10,22 @@
   <a href="#quickstart"><img src="https://img.shields.io/badge/node-24-087f8c?style=flat-square" alt="Requires Node 24"></a>
 </p>
 
-# Project memory for your coding agents
+# mai-mcp
 
-**Keep the decisions, lessons, and code context that make the next session better.**
-mai-mcp gives Claude Code and Codex a shared, persistent project memory through the
-[Model Context Protocol](https://modelcontextprotocol.io/). Switch sessions or
-agents without starting the explanation over.
+**Persistent memory for each project, dedicated skills, and a way for Claude Code
+and Codex to work together.**
 
-Your memory lives in a local PostgreSQL database. Search it, inspect it in the
-dashboard, and decide what is worth keeping. **Free and open source. MIT licensed.**
+mai keeps the context around your code: session history, decisions, lessons,
+plans, review findings, and a graph of the codebase. That context stays with the
+project when you start a new chat or switch agents.
 
-[Get started](#quickstart) · [What you can do](#what-you-can-do) · [See the dashboard](#see-your-projects-memory) · [Documentation](#learn-more)
+It also gives your agents a shared board for questions and handoffs, plus skills
+for planning, implementation, debugging, and review. Use Claude Code, Codex, or
+both against the same project memory.
+
+Runs on your machine with PostgreSQL. Free and open source under MIT.
+
+[Get started](#quickstart) · [Project memory](#what-the-project-remembers) · [Skills](#skills-for-the-whole-job) · [Agent communication](#claude-and-codex-can-work-together) · [Docs](#learn-more)
 
 ## Quickstart
 
@@ -31,61 +36,94 @@ Open a terminal in the project you want your agent to remember, then run:
 npx mai-mcp setup
 ```
 
-Follow the guided setup to choose the install location and connect Claude Code,
-Codex, or both. Setup starts the database, applies the schema, and installs the
-MCP wiring, capture hooks, and skills. **Restart your coding agent when it finishes.**
+Setup asks where to install mai, detects your coding clients, and connects them.
+It starts the database and installs the MCP connection, capture hooks, and skills.
+**Restart Claude Code or Codex when it finishes.**
 
 Try this in your next session:
 
-> Prime this project, inspect the code graph, and tell me what context is available.
+> Read this project’s memory and check the board for any handoffs before we start.
 
-A new brain starts without your past decisions. As you work, ask your agent to
-record the choices and lessons you want future sessions to use.
+The memory builds up as you work. A fresh setup does not already know the history
+of your project; ask your agent to record anything you want later sessions to use.
 
 **macOS and Linux supported. Native Windows 11 is preview.**
 See [platform support](#platform-support) for Windows and WSL2 instructions.
 Already cloned the repository? Run `npm run setup` from the checkout.
 
-## What you can do
+## What the project remembers
 
-| When you need to… | mai gives your agent… |
-|---|---|
-| Pick up work in a fresh session | Project context, recorded decisions, lessons, and recent activity. |
-| Understand why something was built that way | Searchable decisions and their rationale, with links to related work. |
-| Investigate a change | A code graph of functions, classes, routes, and dependencies; optional database schema links. |
-| Avoid repeating a mistake | Durable lessons that can be recalled and attached to relevant code. |
-| Move between Claude Code and Codex | Access to the same project memory, with wiring for both clients. |
-| Review what has accumulated | A local dashboard for search, timelines, the code graph, and memory curation. |
+Each project has its own context. You can come back to:
 
-### Questions worth trying
+- **Sessions and topics:** what you worked on, recent activity, and stored
+  project context.
+- **Decisions and lessons:** the choices you made, the reasons behind them,
+  and problems you have already worked through.
+- **Plans and reviews:** implementation plans, review findings, their status,
+  roadmap items, and tasks that need your input.
+- **Code and Git history:** code relationships and links from decisions to
+  sessions, commits, and changed files.
 
-Ask your coding agent in ordinary language:
+Agents can search this material or load a project briefing with `mai_prime`.
+Optional providers can summarize captured sessions and extract candidate
+decisions for review.
 
-- “What did we decide about authentication, and why?”
-- “What depends on this function?”
-- “Have we run into this problem before?”
-- “Record this tradeoff so we remember it next time.”
+One installation can serve several projects. Each MCP connection is pinned to
+one project; sharing context between projects is an explicit choice.
 
-Answers depend on what has been captured and indexed in your project. The brain
-stores useful context; your agent still checks the current code.
+## Skills for the whole job
 
-## How it fits into your workflow
+mai comes with skills that give agents a process to follow, from investigating
+an unfamiliar codebase to checking finished work. They use the project's memory
+so earlier findings and lessons are available during the next task.
 
-1. **Connect your project.** Setup registers the MCP server and installs the
-   rules, hooks, and skills for your selected clients.
-2. **Build up memory while you work.** Agents search before recording durable
-   decisions and lessons. Capture hooks ingest session history; optional model
-   providers can add summaries and candidate decisions.
-3. **Carry useful context forward.** Start the next session with `mai_prime`,
-   search the brain as questions arise, and use the dashboard to review it.
+- **Explore and research:** trace the code and investigate technical questions.
+- **Design and plan:** settle requirements, write a plan, and review it before
+  implementation.
+- **Implement and coordinate:** work through the plan, divide independent tasks,
+  and check that the result matches what was agreed.
+- **Debug, test, and review:** investigate failures, design checks, review code,
+  and track findings through to resolution.
+- **Maintain the project:** update documentation, audit skills, and turn reviewed
+  lessons into guidance for future work.
 
-Each MCP server is pinned to one project. A single installation can serve
-multiple projects, with separate project context and explicit, opt-in sharing.
+Setup installs the skills for your selected clients. You can also
+[install or update them separately](docs/harnesses.md#skills--install-targets-and-scopes).
+The [skill files](skills/) are part of the repository, so you can read how each
+workflow works.
 
-## See your project's memory
+## Claude and Codex can work together
 
-The local dashboard makes the brain visible: explore the code graph, search
-memory, review lessons, and follow your project's timeline.
+The agents share a project board where they can post questions, answers,
+findings, and handoffs. You can ask one agent to leave work for the other without
+copying its answer between chat windows yourself.
+
+For example:
+
+1. Ask Claude to investigate a bug and post its findings on the board.
+2. Ask Codex to read that handoff, check the evidence, and make the fix.
+3. Ask Claude to review the change. Its findings and the eventual resolution
+   stay with the project.
+
+Communication is asynchronous: an agent picks up updates when it reads the board
+or primes the project. Both clients need to be connected to the same project's
+brain.
+
+When agents work in parallel, they can claim the files they intend to edit and
+get warnings about overlapping work. These claims are advisory; use separate
+Git worktrees when you need file isolation.
+
+[How the shared board works](docs/architecture.md#agent-board-mai_board_) · [Parallel-agent claims](docs/architecture.md#parallel-agent-claims-mai_claim--mai_claims)
+
+## Code graph and dashboard
+
+The code graph connects functions, classes, routes, and dependencies. With an
+optional PostgreSQL or MySQL development-database connection, it can also link
+code to database tables. Ask what calls a function, what depends on it, or how
+a part of the code reaches a table.
+
+The dashboard lets you browse that graph, search memory, review entries, and
+follow the project's timeline.
 
 ![mai dashboard showing the project's interactive code graph](docs/assets/graph.png)
 
@@ -98,7 +136,7 @@ mai dashboard start
 Open the local URL printed by the command. The dashboard is optional and does
 not start automatically during setup. [Dashboard guide](docs/configuration.md#dashboard).
 
-## Your data, your choices
+## Storage and model providers
 
 - **Local storage.** Project memory is stored in your PostgreSQL database.
   Default setup binds the database to your machine's loopback interface.
@@ -108,9 +146,9 @@ not start automatically during setup. [Dashboard guide](docs/configuration.md#da
 - **Optional model features.** Summaries and automatic candidate-decision
   extraction use a configured provider. Claude Code and Codex subscription
   providers are available alongside API providers.
-- **You choose what leaves your machine.** Cloud providers and your coding
-  agent have their own data handling and pricing. Local storage does not make
-  a cloud coding session offline.
+- **Provider costs and data handling.** Your coding clients and any cloud
+  providers you enable still use their own services and pricing. The project
+  database stays on your infrastructure.
 
 [Provider configuration](docs/configuration.md#providers--bring-your-own-model) · [Security policy](SECURITY.md)
 
@@ -163,9 +201,9 @@ hooks and the Docker socket must all live on the same side.
 
 ## Who it is for
 
-Developers working on projects that outlast a single chat: ongoing products,
-multiple repositories, or work that moves between coding agents. Start with one
-project and let useful memory build up alongside the code.
+mai is for ongoing development: projects with history to keep, several
+repositories to understand, or work shared between agents. You can start with
+one project and one coding client.
 
 ## What setup changes
 
@@ -229,21 +267,22 @@ installs the newly selected one. Run `mai verify <slug>` afterwards.
 - [Cross-project references](docs/configuration.md#cross-project-references-operator-only) —
   opt-in, read-only sharing between two separate products' brains: `mai link`
   plus `mai share`, one item at a time, revocable and audited.
+- [Integration contract](docs/conductor-machine-contract.md) — machine-readable
+  run receipts and stored artifacts for external tools.
 - [Security policy][security] · [Contributing][contributing] · [MIT license][license]
 
-## Help shape mai
+## Trying it out?
 
-Trying mai on a real project is the most useful feedback you can give us.
-[Report a bug or request a feature](https://github.com/maikai-group/mai-mcp/issues)
-with your OS, coding client, what you expected, and what happened. Remove
-credentials and private project data from anything you share.
+If setup is confusing, something breaks, or a feature is missing,
+[open an issue](https://github.com/maikai-group/mai-mcp/issues). Include your OS,
+coding client, and what happened. Please leave out credentials and private
+project data.
 
 Want to contribute? Start with the [contributing guide](CONTRIBUTING.md).
-If mai helps your workflow, a GitHub star helps other developers find it.
 
 ---
 
-**mai = me + AI.** Sessions change. Useful knowledge stays.
+**mai = me + AI.**
 
 Built by [Maikai Group](https://github.com/maikai-group). Be water, mai friend.
 <!-- onboarding:end -->
