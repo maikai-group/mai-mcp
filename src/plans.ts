@@ -26,6 +26,8 @@ import {
   budgetPage, budgetSections, budgetText, headlineField, pageBudget,
   type ReadBudget, type ReadSection,
 } from './read-budget.js';
+import { findingCandidate, MAI_SHADOW_CHAR_CAP, planCandidate } from './token-mai-shadow.js';
+import type { FindingShadowIdentity, MaiShadowDraft } from './token-mai-shadow.js';
 
 export type PlanStatus =
   | 'draft' | 'reviewing' | 'approved' | 'executing' | 'executed' | 'abandoned';
@@ -1091,6 +1093,7 @@ export interface FindingsQueryArgs {
   /** Present only on the MCP path; direct/CLI callers omit it and get the
    * same complete string as before (plan 23 R8). */
   budget?: ReadBudget;
+  shadow?: (draft: MaiShadowDraft) => void;
 }
 
 /** Both finding tables project into ONE row shape so the two halves cannot
@@ -1207,7 +1210,7 @@ export async function findingsQuery(args: FindingsQueryArgs): Promise<string> {
         LIMIT $${params.length}`,
       params
     );
-    return await formatFindings(r.rows, 'Findings', args.budget);
+    return await formatFindings(r.rows, 'Findings', args.budget, args.shadow);
   }
 
   const { embedQuery, embeddingsEnabled, cosineSim, currentEmbeddingModelId, budgetHybridHits } =
@@ -1236,7 +1239,7 @@ export async function findingsQuery(args: FindingsQueryArgs): Promise<string> {
         LIMIT $3`,
       [projectId, args.similar_to, limit, planId, status, severity]
     );
-    return await formatFindings(r.rows, 'Similar past findings (text match)', args.budget);
+    return await formatFindings(r.rows, 'Similar past findings (text match)', args.budget, args.shadow);
   }
 
   const current = await pool.query<FindingRow & { embedding: number[] }>(
@@ -1291,7 +1294,7 @@ export async function findingsQuery(args: FindingsQueryArgs): Promise<string> {
         LIMIT $3`,
       [projectId, args.similar_to, limit, planId, status, severity]
     );
-    return await formatFindings(all.rows, 'Similar past findings (text match)', args.budget);
+    return await formatFindings(all.rows, 'Similar past findings (text match)', args.budget, args.shadow);
   }
 
   const stale = await pool.query<FindingRow>(
@@ -1322,7 +1325,7 @@ export async function findingsQuery(args: FindingsQueryArgs): Promise<string> {
   return await formatFindingSections([
     { heading: 'Similar past findings', rows: sel.semantic },
     { heading: 'Also matched by text — not yet re-embedded (`mai embed --rebuild`)', rows: sel.stale },
-  ], args.budget);
+  ], args.budget, args.shadow);
 }
 
 /** Recovery route named on every shortened findings response (plan 23 R9): the
@@ -1384,6 +1387,7 @@ export interface FindingSection { heading: string; rows: readonly FindingRow[] }
  * pre-plan-23 `parts.join('\n\n')` byte-for-byte on unbudgeted calls. */
 async function formatFindingSections(
   sections: readonly FindingSection[], budget?: ReadBudget,
+  shadow?: (draft: MaiShadowDraft) => void,
 ): Promise<string> {
   const populated = sections.filter((s) => s.rows.length > 0);
   const union = populated.flatMap((s) => s.rows);
@@ -1394,13 +1398,27 @@ async function formatFindingSections(
     fullRows: s.rows.map((f) => findingFullRow(f, recur)),
     headlineRows: s.rows.map((f) => findingHeadlineRow(f, recur)),
   }));
-  return budgetSections(budget, readSections, 'finding', FINDINGS_NARROWING);
+  const baseline = budgetSections(budget, readSections, 'finding', FINDINGS_NARROWING);
+  if (shadow && budget) {
+    try {
+      const candidate = budgetSections(
+        { fullRows: 0, charBudget: MAI_SHADOW_CHAR_CAP }, readSections, 'finding', FINDINGS_NARROWING,
+      );
+      const identities: FindingShadowIdentity[] = populated.flatMap((section) => section.rows.map((row) => ({
+        id: row.id, status: row.status, severity: row.severity,
+        title: row.title, location: row.location,
+      })));
+      shadow(findingCandidate(readSections, identities, baseline, candidate));
+    } catch { shadow({ kind: 'skip', reason: 'missing-field' }); }
+  }
+  return baseline;
 }
 
 async function formatFindings(
   rows: FindingRow[], heading: string, budget?: ReadBudget,
+  shadow?: (draft: MaiShadowDraft) => void,
 ): Promise<string> {
-  return formatFindingSections([{ heading, rows }], budget);
+  return formatFindingSections([{ heading, rows }], budget, shadow);
 }
 
 export interface FindingUpdateArgs {
@@ -1524,6 +1542,7 @@ export async function findingUpdate(args: FindingUpdateArgs): Promise<string> {
  */
 export async function planText(
   params: Record<string, unknown>, budget?: ReadBudget,
+  shadow?: (draft: MaiShadowDraft) => void,
 ): Promise<string> {
   // THE single validator for both history selectors (plan 23): index.ts hands
   // raw params straight through, so every rejection has to be named here.
@@ -1561,7 +1580,9 @@ export async function planText(
       ? `\n  (${p.review_count} pass(es) posted — call with pass:"N" for one complete review)`
       : "";
     const tasks = p.operator_tasks === undefined ? ''
-      : `\noperator tasks: ${p.operator_tasks.inserted} inserted, ${p.operator_tasks.existing} existing; `
+      : `\noperator tasks for ${p.title ?? p.slug}`
+        + `${p.current_sha ? ` @ ${p.current_sha.slice(0, 8)}` : ''}: `
+        + `${p.operator_tasks.inserted} inserted, ${p.operator_tasks.existing} existing; `
         + `${p.operator_tasks.blocking} blocking, ${p.operator_tasks.follow_up} follow-up — `
         + `My Tasks: ${p.operator_tasks.url}`;
     return budgetText(budget, header + posted + tasks, 'call mai_plan with pass:"N" for one complete review');
@@ -1608,5 +1629,14 @@ export async function planText(
     : selected
       ? `call mai_plan with pass:"${selected.pass}"`
       : 'call mai_plan with pass:"N" for one complete review';
-  return budgetText(budget, header + reviews + pointer, narrowing);
+  const baseline = budgetText(budget, header + reviews + pointer, narrowing);
+  if (shadow && budget) {
+    try {
+      shadow(planCandidate(header, p.reviews.map((rv) => ({
+        pass: rv.pass, verdict: rv.verdict, reviewer: rv.reviewer_agent,
+        planSha: rv.plan_sha, synthesis: rv.synthesis,
+      })), baseline, pointer));
+    } catch { shadow({ kind: 'skip', reason: 'missing-field' }); }
+  }
+  return baseline;
 }

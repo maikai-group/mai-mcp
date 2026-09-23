@@ -83,6 +83,11 @@ describe('skills suite gates', () => {
         'scripts/sync-skill-blocks.mjs',
         'skill-blocks/epistemics.md',
         'skill-blocks/cleanup.md',
+        'skill-blocks/navigation-preflight.md',
+        'skills/mai-design/SKILL.md',
+        'skills/write-plan/SKILL.md',
+        'skills/mai-explore/SKILL.md',
+        'skills/plan-review/SKILL.md',
         'skills/receiving-plan-review/SKILL.md',
         'skills/mai-receiving-code-review/SKILL.md',
       ]) {
@@ -140,6 +145,79 @@ describe('skills suite gates', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  const navigationConsumer = 'skills/write-plan/SKILL.md';
+  const navigationStart = '<!-- mai:shared:navigation-preflight start';
+  const navigationEnd = '<!-- mai:shared:navigation-preflight end -->';
+  function navBlock(text: string): string {
+    const a = text.indexOf(navigationStart), b = text.indexOf(navigationEnd);
+    if (a < 0 || b < a) throw Error('navigation fixture lacks block');
+    return text.slice(a, b + navigationEnd.length);
+  }
+  const navMutations: Array<{ name: string; mutate(root: string): void }> = [
+    { name: 'missing pair', mutate(root) {
+      const p = path.join(root, navigationConsumer), t = fs.readFileSync(p, 'utf8');
+      fs.writeFileSync(p, t.replace(navBlock(t), ''));
+    } },
+    { name: 'duplicate', mutate(root) {
+      const p = path.join(root, navigationConsumer), t = fs.readFileSync(p, 'utf8');
+      fs.appendFileSync(p, '\n' + navBlock(t));
+    } },
+    { name: 'reversed', mutate(root) {
+      const p = path.join(root, navigationConsumer), t = fs.readFileSync(p, 'utf8');
+      fs.writeFileSync(p, t.replace(navBlock(t), navigationEnd + '\n' + navigationStart));
+    } },
+    { name: 'drift', mutate(root) {
+      const p = path.join(root, navigationConsumer), t = fs.readFileSync(p, 'utf8');
+      fs.writeFileSync(p, t.replace('One automatic call per invocation', 'Always call repeatedly'));
+    } },
+    { name: 'excluded consumer', mutate(root) {
+      const t = fs.readFileSync(path.join(root, navigationConsumer), 'utf8');
+      fs.appendFileSync(path.join(root, 'skills/plan-execute/SKILL.md'), '\n' + navBlock(t));
+    } },
+    { name: 'unregistered marker', mutate(root) {
+      const p = path.join(root, 'scripts/sync-skill-blocks.mjs');
+      fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace("      'skills/write-plan/SKILL.md',\n", ''));
+    } },
+    { name: 'registration and markers removed together', mutate(root) {
+      const p = path.join(root, 'scripts/sync-skill-blocks.mjs');
+      fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace("      'skills/write-plan/SKILL.md',\n", ''));
+      const c = path.join(root, navigationConsumer), t = fs.readFileSync(c, 'utf8');
+      fs.writeFileSync(c, t.replace(navBlock(t), ''));
+    } },
+    { name: 'orphan end on an excluded skill', mutate(root) {
+      fs.appendFileSync(path.join(root, 'skills/mai-verify/SKILL.md'), '\n' + navigationEnd);
+    } },
+    { name: 'weakened canonical rule after sync', mutate(root) {
+      const p = path.join(root, 'skill-blocks/navigation-preflight.md');
+      fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(
+        'Do not retry at the skill layer', 'Retry until the result is useful'));
+      const synced = run([path.join(root, 'scripts/sync-skill-blocks.mjs')]);
+      expect(synced.status, synced.out).toBe(0);
+    } },
+  ];
+  it.each(navMutations)('navigation gate rejects $name', ({ mutate }) => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mai-navigation-gate-')));
+    try {
+      for (const rel of ['skills', 'skill-blocks', '.claude/agents']) {
+        const to = path.join(tmp, rel);
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.cpSync(rel, to, { recursive: true });
+      }
+      fs.mkdirSync(path.join(tmp, 'scripts'));
+      for (const name of ['check-skills.mjs', 'sync-skill-blocks.mjs']) {
+        fs.copyFileSync(path.join('scripts', name), path.join(tmp, 'scripts', name));
+      }
+      const command = [path.join(tmp, 'scripts/check-skills.mjs')];
+      const clean = run(command);
+      expect(clean.status, clean.out).toBe(0);
+      expect(clean.out).toContain('skills gate: clean');
+      mutate(tmp);
+      const failed = run(command);
+      expect(failed.status, failed.out).toBe(1);
+      expect(failed.out).toContain('navigation-preflight:');
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   });
 
   it('the gates discriminate — conforming fixtures pass, verbs are not tool names', () => {
@@ -422,11 +500,11 @@ describe('skills suite gates', () => {
       const tools = Reflect.get(manifest, 'toolDefinitions');
       if (typeof tools !== 'object' || tools === null) throw new Error('toolDefinitions missing');
       expect(Object.keys(tools)).toEqual(['count', 'chars', 'reserve']);
-      const receipt = /^VC5: count=(\d+) chars=(\d+) reserve=(\d+)$/m.exec(
-        execFileSync('git', ['show', '-s', '--format=%b', '49fd391'], { cwd: clone, encoding: 'utf8' }),
-      );
-      if (!receipt) throw new Error('the 49fd391 VC5 receipt line is unreadable');
-      expect(tools).toEqual({ count: Number(receipt[1]), chars: Number(receipt[2]), reserve: Number(receipt[3]) });
+      const toolReceiptPath = path.join(clone, 'release/public/tool-surface-receipt.json');
+      const toolReceiptText = fs.readFileSync(toolReceiptPath, 'utf8');
+      const receipt: unknown = JSON.parse(toolReceiptText);
+      expect(receipt).toEqual({ count: 48, chars: 30400, reserve: 600 });
+      expect(tools).toEqual(receipt);
       const records: string[] = [];
       const walk = (dir: string): void => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -451,6 +529,27 @@ describe('skills suite gates', () => {
       expect(verified.status, verified.out).toBe(0);
       expect(verified.out).toContain(`sourceSha: ${head}`);
       expect(verified.out).toContain('verify-manifest: OK');
+      // A stale or malformed receipt must still fail independently of a valid
+      // manifest and matching live surface. Restore the exact reviewed bytes.
+      try {
+        fs.writeFileSync(toolReceiptPath, JSON.stringify({ count: 47, chars: 30426, reserve: 574 }));
+        const staleTools = runCommand('bash', [cloneAssembler, '--verify-manifest', out, head], env);
+        expect(staleTools.status).not.toBe(0);
+        expect(staleTools.out).toContain('MISMATCH toolDefinitions');
+        for (const invalid of [
+          { count: 48, chars: 30400, reserve: 599 },
+          { count: 48, chars: 30701, reserve: 299 },
+          { count: 48, chars: 30400, reserve: 600, extra: true },
+          { count: '48', chars: 30400, reserve: 600 },
+        ]) {
+          fs.writeFileSync(toolReceiptPath, JSON.stringify(invalid));
+          const rejected = runCommand('bash', [cloneAssembler, '--verify-manifest', out, head], env);
+          expect(rejected.status).not.toBe(0);
+          expect(rejected.out).toContain('invalid reviewed tool-surface receipt');
+        }
+      } finally {
+        fs.writeFileSync(toolReceiptPath, toolReceiptText);
+      }
       const wrongSha = runCommand('bash', [cloneAssembler, '--verify-manifest', out, 'f'.repeat(40)], env);
       expect(wrongSha.status).not.toBe(0);
       expect(wrongSha.out).toContain('MISMATCH sourceSha');

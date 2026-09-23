@@ -155,50 +155,48 @@ test('roadmap priority bands, priority changes, and manual order survive reloads
   expect(outsideMovedBand(await roadmapRows(request))).toEqual(untouchedBefore);
 });
 
-test('My Tasks groups history and persists complete, reopen, and removal across reloads', async ({ page }) => {
+test('My Tasks focus keeps outstanding and completed work together across navigation and mutations', async ({ page }) => {
   await page.goto('/#/tasks');
   await expect(page.getByRole('heading', { name: 'My Tasks', exact: true })).toBeVisible();
   const pendingTab = page.getByRole('tab', { name: /Pending/ });
-  const completedTab = page.getByRole('tab', { name: /Completed/ });
   await expect(pendingTab).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('heading', { name: 'E2E Operator Plan', exact: true })).toBeVisible();
-  const unlinked = page.getByTestId('task-group').filter({
-    has: page.getByRole('heading', { name: 'Unlinked tasks', exact: true }),
-  });
-  await expect(unlinked).toHaveCount(1);
-  await expect(unlinked.getByText('Assigned by ad-hoc-agent', { exact: true })).toBeVisible();
-  await expect(unlinked.getByText('Assigned by other-ad-hoc-agent', { exact: true })).toBeVisible();
   await expect(page.getByText('E2E removed task', { exact: true })).toHaveCount(0);
 
-  await completedTab.click();
+  await page.getByRole('button', { name: 'Focus E2E Operator Plan' }).click();
+  await expect(page).toHaveURL(/#\/tasks\?plan=43000000-0000-4000-8000-000000000001$/);
+  await expect(page.getByRole('heading', { name: 'Outstanding (2)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Completed (2)' })).toBeVisible();
+  await expect(page.getByText('E2E blocking task', { exact: true })).toBeVisible();
   await expect(page.getByText('E2E completed task', { exact: true })).toBeVisible();
   await expect(page.getByText('E2E dismissed task', { exact: true })).toBeVisible();
   await expect(page.getByText('reason: waived for E2E proof', { exact: true })).toBeVisible();
+  await expect(page.getByText('E2E agent assignment', { exact: true })).toHaveCount(0);
   await expect(page.getByText('E2E removed task', { exact: true })).toHaveCount(0);
 
-  await pendingTab.click();
+  await page.goBack();
+  await expect(pendingTab).toHaveAttribute('aria-selected', 'true');
+  await page.goForward();
+  await expect(page.getByRole('heading', { name: 'Outstanding (2)' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Completed (2)' })).toBeVisible();
 
   const completed = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/user-tasks/status'
   );
   await page.getByRole('checkbox', { name: 'Complete E2E blocking task' }).click();
   expect((await completed).ok()).toBe(true);
-
-  await page.reload();
-  await page.getByRole('tab', { name: /Completed/ }).click();
   await expect(page.getByRole('checkbox', { name: 'Reopen E2E blocking task' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Outstanding (1)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Completed (3)' })).toBeVisible();
+
   const reopened = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/user-tasks/status'
   );
   await page.getByRole('checkbox', { name: 'Reopen E2E blocking task' }).click();
   expect((await reopened).ok()).toBe(true);
+  await expect(page.getByRole('checkbox', { name: 'Complete E2E blocking task' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Outstanding (2)' })).toBeVisible();
 
-  await page.reload();
-  await expect(page.getByRole('tab', { name: /Pending/ })).toHaveAttribute('aria-selected', 'true');
-  const planGroup = page.getByTestId('task-group').filter({ hasText: 'E2E Operator Plan' });
-  await expect(planGroup.getByRole('checkbox', { name: 'Complete E2E blocking task' })).toBeVisible();
-
-  await page.getByRole('tab', { name: /Completed/ }).click();
   await page.getByRole('button', { name: 'Remove E2E completed task' }).click();
   await expect(page.getByRole('dialog', { name: 'Remove E2E completed task' })).toBeVisible();
   const removed = page.waitForResponse(
@@ -206,7 +204,25 @@ test('My Tasks groups history and persists complete, reopen, and removal across 
   );
   await page.getByRole('button', { name: 'Confirm remove' }).click();
   expect((await removed).ok()).toBe(true);
+  await expect(page).toHaveURL(/#\/tasks\?plan=43000000-0000-4000-8000-000000000001$/);
+  await expect(page.getByRole('heading', { name: 'Completed (1)' })).toBeVisible();
+  await expect(page.getByText('E2E completed task', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('E2E dismissed task', { exact: true })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Back to all tasks' }).click();
+  const unlinked = page.getByTestId('task-group').filter({
+    has: page.getByRole('heading', { name: 'Unlinked tasks', exact: true }),
+  });
+  await expect(unlinked).toHaveCount(1);
+  await unlinked.getByRole('button', { name: 'Focus Unlinked tasks' }).click();
+  await expect(page).toHaveURL(/#\/tasks\?group=unlinked$/);
+  await expect(page.getByRole('heading', { name: 'Outstanding (2)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Completed (0)' })).toBeVisible();
+  await expect(page.getByText('Assigned by ad-hoc-agent', { exact: true })).toBeVisible();
+  await expect(page.getByText('Assigned by other-ad-hoc-agent', { exact: true })).toBeVisible();
+  await expect(page.getByText('E2E blocking task', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Back to all tasks' }).click();
   await page.reload();
   await page.getByRole('tab', { name: /Completed/ }).click();
   await expect(page.getByText('E2E completed task', { exact: true })).toHaveCount(0);

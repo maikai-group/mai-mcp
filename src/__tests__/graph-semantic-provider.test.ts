@@ -34,7 +34,7 @@ describe('semantic source and provider boundaries',()=>{
     const p=await createCodeEmbedder({provider:'openai',revision:1,consentVersion:'code-and-lessons/1'});if(!p)throw Error('provider absent');
     expect(p.model).toBe('text-embedding-3-small');expect(p.dimensions).toBe(1536);
     expect(await p.document('source')).toHaveLength(1536);expect(await p.query('question')).toHaveLength(1536);
-    expect(fake.openai).toHaveBeenCalledWith({apiKey:'test-not-a-real-key',timeout:5000,maxRetries:0});
+    expect(fake.openai).toHaveBeenCalledWith({apiKey:'test-not-a-real-key',baseURL:'https://api.openai.com/v1',timeout:5000,maxRetries:0});
     expect(fake.create.mock.calls.map(call=>call[0])).toEqual(['source','question'].map(input=>({model:'text-embedding-3-small',input,dimensions:1536})));
     expect(fake.create.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
     fake.create.mockResolvedValueOnce({data:[{embedding:[1]}]});expect(await p.document('bad shape')).toBeNull();

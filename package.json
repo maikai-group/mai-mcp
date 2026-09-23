@@ -62,7 +62,8 @@
     "node": "^24.0.0"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^3.8.1"
+    "@huggingface/transformers": "^3.8.1",
+    "@napi-rs/keyring": "2.1.0"
   },
   "overrides": {
     "sharp": "0.35.4"

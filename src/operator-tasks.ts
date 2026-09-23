@@ -6,6 +6,9 @@ import { budgetSections, budgetText, headlineField, type ReadBudget, type ReadSe
 import { agentIdentity, INSTANCE_SESSION } from './session-identity.js';
 
 export const MY_TASKS_URL = 'http://127.0.0.1:6601/#/tasks';
+export function myTasksPlanUrl(planId: string): string {
+  return `${MY_TASKS_URL}?plan=${encodeURIComponent(planId)}`;
+}
 
 export type OperatorTaskKind = 'blocking' | 'follow_up';
 export type OperatorTaskSource = 'plan' | 'ad_hoc';
@@ -22,6 +25,8 @@ export interface OperatorChecklistItem {
 export interface OperatorTaskSyncReceipt {
   plan_id: string;
   plan_path: string;
+  plan_title: string | null;
+  plan_sha: string | null;
   inserted: number;
   existing: number;
   blocking: number;
@@ -49,6 +54,7 @@ export interface OperatorTaskRow {
   plan_title: string | null;
   plan_path: string | null;
   plan_status: string | null;
+  plan_sha: string | null;
   plan_updated_at: Date | string | null;
 }
 
@@ -59,6 +65,7 @@ export interface OperatorTaskGroup {
   plan_title: string | null;
   plan_path: string | null;
   plan_status: string | null;
+  plan_sha: string | null;
   pending_count: number;
   blocking_count: number;
   follow_up_count: number;
@@ -301,12 +308,15 @@ async function pendingCounts(client: QueryClient, projectId: string, planId?: st
 }
 
 function receiptText(receipt: OperatorTaskSyncReceipt): string {
-  return `operator tasks: ${receipt.inserted} inserted, ${receipt.existing} existing; `
+  const label = receipt.plan_title ?? receipt.plan_path;
+  const identity = ` for ${label}${receipt.plan_sha ? ` @ ${receipt.plan_sha.slice(0, 8)}` : ''}`;
+  return `operator tasks${identity}: ${receipt.inserted} inserted, ${receipt.existing} existing; `
     + `${receipt.blocking} blocking, ${receipt.follow_up} follow-up — My Tasks: ${receipt.url}`;
 }
 
 function assignmentReceiptText(receipt: OperatorTaskSyncReceipt, groupIdentity: string): string {
-  return `operator tasks for ${groupIdentity}: ${receipt.inserted} inserted, ${receipt.existing} existing; `
+  const revision = receipt.plan_sha ? ` @ ${receipt.plan_sha.slice(0, 8)}` : '';
+  return `operator tasks for ${groupIdentity}${revision}: ${receipt.inserted} inserted, ${receipt.existing} existing; `
     + `${receipt.blocking} blocking, ${receipt.follow_up} follow-up — My Tasks: ${receipt.url}`;
 }
 
@@ -384,11 +394,13 @@ async function syncWithClient(
   return {
     plan_id: plan.id,
     plan_path: plan.path,
+    plan_title: plan.title,
+    plan_sha: plan.current_sha,
     inserted,
     existing,
     blocking: Number(counts.blocking_count),
     follow_up: Number(counts.follow_up_count),
-    url: MY_TASKS_URL,
+    url: myTasksPlanUrl(plan.id),
   };
 }
 
@@ -452,12 +464,14 @@ async function assignTasks(planPath: string | undefined, tasks: readonly Operato
     return assignmentReceiptText({
       plan_id: plan?.id ?? '',
       plan_path: plan?.path ?? '',
+      plan_title: plan?.title ?? null,
+      plan_sha: plan?.current_sha ?? null,
       inserted,
       existing,
       blocking: Number(counts.blocking_count),
       follow_up: Number(counts.follow_up_count),
-      url: MY_TASKS_URL,
-    }, plan ? `plan ${plan.path} (${plan.id})` : `agent ${assignedByAgent}`);
+      url: plan ? myTasksPlanUrl(plan.id) : MY_TASKS_URL,
+    }, plan ? `plan ${plan.title ?? plan.path} (${plan.id})` : `agent ${assignedByAgent}`);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -473,7 +487,7 @@ export async function operatorTasksPost(input: unknown): Promise<string> {
     const exact = exactObject(input, ['mode', 'plan_path'], 'sync-plan input');
     const planPath = requiredString(exact, 'plan_path', 1000, 'sync-plan input');
     const receipt = await syncPlanOperatorTasks({ plan: planPath });
-    return assignmentReceiptText(receipt, `plan ${receipt.plan_path} (${receipt.plan_id})`);
+    return receiptText(receipt);
   }
   if (mode === 'assign') {
     const keys = Object.keys(base);
@@ -618,6 +632,7 @@ function taskColumns(alias: string): string {
     ${alias}.status, ${alias}.resolution_note, ${alias}.resolved_at,
     ${alias}.created_at, ${alias}.updated_at,
     p.title AS plan_title, p.path AS plan_path, p.status AS plan_status,
+    p.current_sha AS plan_sha,
     p.updated_at AS plan_updated_at`;
 }
 
@@ -667,6 +682,7 @@ export async function listOperatorTasks(args: {
         plan_title: row.plan_title,
         plan_path: row.plan_path,
         plan_status: row.plan_status,
+        plan_sha: row.plan_sha,
         pending_count: 0,
         blocking_count: 0,
         follow_up_count: 0,
@@ -727,11 +743,14 @@ export async function operatorTasksText(input: unknown, budget?: ReadBudget): Pr
     planId: plan?.id,
   });
   const heading = `operator tasks: pending=${listed.pending_count}, blocking=${listed.blocking_count}, `
-    + `follow-up=${listed.follow_up_count} — My Tasks: ${MY_TASKS_URL}`;
+    + `follow-up=${listed.follow_up_count} — My Tasks: ${plan ? myTasksPlanUrl(plan.id) : MY_TASKS_URL}`;
   const narrowing = 'call mai_user_tasks with one plan_path, history:false, or detail:"summary"';
   if (!full) {
     const groupHeadings = listed.groups.map((group) => group.group_kind === 'plan'
       ? `- plan ${group.plan_title ?? group.plan_path ?? group.group_key}`
+        + `${group.plan_sha ? ` @ ${group.plan_sha.slice(0, 8)}` : ''}`
+        + ` — ${group.blocking_count} blocking, ${group.follow_up_count} follow-up — `
+        + (group.plan_id ? myTasksPlanUrl(group.plan_id) : MY_TASKS_URL)
       : '- unlinked tasks');
     const summary = groupHeadings.length === 0 ? heading : `${heading}\n${groupHeadings.join('\n')}`;
     return budgetText(budget, summary, narrowing);
@@ -739,6 +758,7 @@ export async function operatorTasksText(input: unknown, budget?: ReadBudget): Pr
   const sections: ReadSection[] = listed.groups.map((group) => ({
     heading: group.group_kind === 'plan'
       ? `\n## ${markdownEscape(group.plan_title ?? group.plan_path ?? group.group_key)}`
+        + `${group.plan_sha ? ` @ ${group.plan_sha.slice(0, 8)}` : ''}`
       : '\n## Unlinked tasks',
     fullRows: group.tasks.map((task) =>
       `- [${task.status === 'pending' ? ' ' : 'x'}] **${markdownEscape(task.title)}** `

@@ -20,13 +20,14 @@ import { Topics } from '../views/topics/Topics';
 import { Roadmap } from '../views/roadmap/Roadmap';
 import { MyTasks } from '../views/tasks/MyTasks';
 import { Sharing } from '../views/sharing/Sharing';
+import { Providers } from '../views/settings/Providers';
 import { Profile } from '../views/profile/Profile';
 import type { ReviewRow, UserTaskListResponse } from '../lib/types';
 
 const BADGE_POLL_MS = 60_000;
 
 function initialDestination(): Destination {
-  const h = window.location.hash.replace(/^#\/?/, '');
+  const h = window.location.hash.replace(/^#\/?/, '').split('?')[0];
   return isDestination(h) ? h : 'home';
 }
 
@@ -51,7 +52,7 @@ function ShellInner() {
   // Hash ↔ state sync (no router dep).
   useEffect(() => {
     const onHash = () => {
-      const h = window.location.hash.replace(/^#\/?/, '');
+      const h = window.location.hash.replace(/^#\/?/, '').split('?')[0];
       if (isDestination(h)) setDest(h);
     };
     window.addEventListener('hashchange', onHash);
@@ -133,6 +134,8 @@ function ShellInner() {
         return <Sessions />;
       case 'topics':
         return <Topics />;
+      case 'settings':
+        return <Providers />;
       case 'profile':
         return <Profile onNavigate={navigate} />;
       default:

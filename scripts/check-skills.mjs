@@ -433,7 +433,9 @@ export function gateReviewWorkflow(file, slug, tok) {
     ['legacy server gets one sync recovery', '`mai_user_tasks_post {mode:"sync-plan", plan_path:"<path>"}` exactly once as recovery'],
     ['sync recovery never copies task bodies', 'Never copy plan task titles or instructions into that recovery call'],
     ['new operator work uses one assign batch', 'Submit it once as one'],
-    ['handoffs are count-and-link only', 'report only pending/blocking/follow-up counts plus `http://127.0.0.1:6601/#/tasks`'],
+    ['handoffs carry exact plan identity and link', 'report only pending/blocking/follow-up counts plus the exact plan identity and My Tasks URL from'],
+    ['aggregate handoffs identify every plan', 'emit one identity/count/link line per plan'],
+    ['handoffs use server-issued task links', 'use the receipt returned by `mai_plan` or `mai_user_tasks_post`'],
     ['handoffs never repeat stored task bodies', 'Do not repeat operator-task titles or instructions in chat or board handoffs unless the user explicitly asks to see them there.'],
     ['pending blockers stop closeout', 'Any pending blocking count stops closeout'],
     ['follow-ups do not block closeout', 'Pending follow-ups do not block closeout'],
@@ -548,7 +550,7 @@ const WORKFLOW_FINGERPRINTS = [
   },
   {
     path: 'scripts/release-public.sh',
-    sha256: 'f4619aec4be268ec734e5ec2194cf29491ad11969a9887df3f6a67763667462c',
+    sha256: '736616216675b92fddfdc6d51c5c519fe100fdd4e9ddcfb50e590a9f55e16fd1',
     required: false,
   },
 ];
@@ -683,6 +685,65 @@ export function gateReviewerDefinitions(repoRoot, { requireRelease = true, exact
   }
 }
 
+export function gateNavigationPreflight(repoRoot) {
+  const expected = new Set([
+    'mai-design', 'write-plan', 'mai-explore', 'plan-review', 'receiving-plan-review',
+  ]);
+  const source = 'skill-blocks/navigation-preflight.md';
+  const sourceFile = path.join(repoRoot, source);
+  if (!fs.existsSync(sourceFile)) {
+    flag(source, 'navigation-preflight', 'missing canonical source'); return;
+  }
+  const body = fs.readFileSync(sourceFile, 'utf8').trimEnd();
+  for (const required of [
+    'One automatic call per invocation', 'At most one additional call',
+    'Do not retry at the skill layer', 'first verify the causal mechanism',
+    'Verify every material reference', 'continues through ordinary graph/search/source tools',
+    'Do not reduce required review breadth', 'without complete-workflow measurements',
+  ]) {
+    if (!body.includes(required)) flag(source, 'navigation-preflight', `missing policy: ${required}`);
+  }
+  const start = '<!-- mai:shared:navigation-preflight start';
+  const end = '<!-- mai:shared:navigation-preflight end -->';
+  const want = `${start} — synced from ${source}.
+     Do NOT hand-edit inside this block; the sync rewrites it wholesale and the
+     edit disappears silently (lesson 420dbda2). -->\n${body}\n${end}`;
+  const skills = path.join(repoRoot, 'skills');
+  for (const slug of expected) {
+    if (!fs.existsSync(path.join(skills, slug, 'SKILL.md'))) {
+      flag(`skills/${slug}/SKILL.md`, 'navigation-preflight', 'missing required consumer');
+    }
+  }
+  for (const entry of fs.readdirSync(skills, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const rel = `skills/${entry.name}/SKILL.md`;
+    const file = path.join(repoRoot, rel);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    const starts = text.split(start).length - 1;
+    const ends = text.split(end).length - 1;
+    if (!expected.has(entry.name)) {
+      if (starts || ends) flag(rel, 'navigation-preflight', 'excluded consumer carries markers');
+      continue;
+    }
+    const from = text.indexOf(start), to = text.indexOf(end);
+    if (starts !== 1 || ends !== 1 || to < from) {
+      flag(rel, 'navigation-preflight', 'requires one ordered marker pair'); continue;
+    }
+    if (text.slice(from, to + end.length) !== want) {
+      flag(rel, 'navigation-preflight', 'canonical block drift');
+    }
+  }
+  // Independent expected set above plus the real registry's own parity check:
+  // removing a registration, markers, or both cannot silently opt a skill out.
+  try {
+    execFileSync(process.execPath, [path.join(repoRoot, 'scripts/sync-skill-blocks.mjs'), '--check'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe', timeout: 30_000 });
+  } catch {
+    flag(source, 'navigation-preflight', 'shared-block registry/parity check failed');
+  }
+}
+
 // ---------- runner ----------
 
 function repoTrackedFiles() {
@@ -715,6 +776,7 @@ export function runAll(dir, tracked = path.resolve(dir) === path.resolve(SKILLS_
     gateWorkflowFingerprints(root, { requireRelease: privateTree });
     gateScratchContracts(root, { requireRelease: privateTree });
     gateReviewerDefinitions(root, { requireRelease: privateTree, exactInventory: !privateTree });
+    gateNavigationPreflight(root);
   }
   gatePackageValidity(dir);
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -952,6 +1014,7 @@ const productionFingerprintMutant = {
       fs.cpSync(path.join(root, 'skill-blocks'), path.join(tmp, 'skill-blocks'), { recursive: true });
       fs.cpSync(path.join(root, '.claude', 'agents'), path.join(tmp, '.claude', 'agents'), { recursive: true });
       fs.copyFileSync(path.join(root, 'scripts', 'check-skills.mjs'), path.join(tmp, 'scripts', 'check-skills.mjs'));
+      fs.copyFileSync(path.join(root, 'scripts', 'sync-skill-blocks.mjs'), path.join(tmp, 'scripts', 'sync-skill-blocks.mjs'));
       fs.appendFileSync(path.join(tmp, 'skills', 'plan-review-cycle', 'scripts', 'review-scratch.sh'), '\n# changed scratch lifecycle\n');
       try {
         execFileSync(process.execPath, ['scripts/check-skills.mjs'], { cwd: tmp, encoding: 'utf8', stdio: 'pipe' });
@@ -1132,7 +1195,7 @@ const MUTANTS = [
     'Any pending blocking count stops closeout',
     'Pending blocking work is advisory during closeout'),
   contractMutant('plan-execute', 'execute: handoff repeats operator task bodies',
-    'report only pending/blocking/follow-up counts plus `http://127.0.0.1:6601/#/tasks`',
+    'report only pending/blocking/follow-up counts plus the exact plan identity and My Tasks URL from',
     'report operator task titles and instructions in every handoff'),
   contractMutant('write-plan', 'plan: roadmap identity header deleted',
     'Every plan carries exactly one roadmap-card identity header',

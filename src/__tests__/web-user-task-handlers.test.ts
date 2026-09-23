@@ -122,10 +122,10 @@ beforeEach(async () => {
   await admin.query(`DELETE FROM operator_tasks WHERE project_id=ANY($1::uuid[])`, [[projectA, projectB]]);
   await admin.query(`DELETE FROM plans WHERE project_id=ANY($1::uuid[])`, [[projectA, projectB]]);
   const plans = await admin.query<{ id: string; slug: string }>(
-    `INSERT INTO plans(project_id,slug,path,title,status,updated_at) VALUES
-      ($1,'new-plan','docs/new.md','New Plan','executing','2026-01-03T00:00:00Z'),
-      ($1,'old-plan','docs/old.md','Old Plan','approved','2026-01-02T00:00:00Z'),
-      ($2,'foreign-plan','docs/foreign.md','Foreign Plan','executing','2026-01-01T00:00:00Z')
+    `INSERT INTO plans(project_id,slug,path,title,current_sha,status,updated_at) VALUES
+      ($1,'new-plan','docs/new.md','New Plan',repeat('a',64),'executing','2026-01-03T00:00:00Z'),
+      ($1,'old-plan','docs/old.md','Old Plan',repeat('b',64),'approved','2026-01-02T00:00:00Z'),
+      ($2,'foreign-plan','docs/foreign.md','Foreign Plan',repeat('c',64),'executing','2026-01-01T00:00:00Z')
      RETURNING id,slug`, [projectA, projectB]
   );
   const id = (slug: string) => {
@@ -191,8 +191,23 @@ describe('import-safe user task handlers', () => {
     ]);
     expect(result.rows[0]).toMatchObject({
       plan_title: 'New Plan', plan_path: 'docs/new.md', plan_status: 'executing',
+      plan_sha: 'a'.repeat(64),
       assigned_by_agent: 'assigner-a',
     });
+    expect(result.groups[0].plan_sha).toBe('a'.repeat(64));
+  });
+
+  it('filters by an exact plan UUID and rejects malformed plan links', async () => {
+    const all = await get();
+    const planId = all.rows.find((row) => row.plan_title === 'New Plan')?.plan_id;
+    if (!planId) throw new Error('new plan fixture missing');
+    const scoped = await get(`&history=1&plan=${planId}`);
+    expect(scoped.rows.map((row) => row.title)).toEqual(['New block', 'New follow', 'New history']);
+    expect(scoped.groups).toHaveLength(1);
+    expect(scoped.groups[0].plan_id).toBe(planId);
+    expect(scoped).toMatchObject({ pending_count: 2, blocking_count: 1, follow_up_count: 1 });
+    const malformed = await expectClientError(get('&plan=not-a-uuid'), 400);
+    expect(malformed.message).toBe("query 'plan' must be a UUID");
   });
 
   it('supports strict history/summary flags and empty summary collections', async () => {

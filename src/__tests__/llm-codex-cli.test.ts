@@ -3,6 +3,8 @@
  * subscription smoke lives in llm-codex-cli-live.test.ts (MAI_TEST_CODEX=1) —
  * separate file because THIS suite pins MAI_CC_TIMEOUT_MS=2000 at module load. */
 import { beforeAll, afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../providers/runtime.js', () => import('./support/provider-runtime-mock.js'));
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -97,6 +99,7 @@ afterAll(() => {
 });
 beforeEach(async () => {
   vi.restoreAllMocks();
+  vi.resetModules();
   const { resetCodexBinaryProbe } = await import('../llm/codex-cli.js');
   resetCodexBinaryProbe();
   delete process.env.MAI_CODEX_FIXTURE; // login-channel reset
@@ -500,11 +503,14 @@ describe('detection + status', () => {
     }
   });
   it("summaryModel: unset → '' (no -m flag); MAI_SUMMARY_MODEL overrides", async () => {
-    const { summaryModel } = await import('../llm/provider.js');
     delete process.env.MAI_SUMMARY_MODEL;
-    expect(summaryModel('codex-cli')).toBe('');
+    vi.resetModules();
+    const { summaryModel: unsetSummaryModel } = await import('../llm/provider.js');
+    expect(unsetSummaryModel('codex-cli')).toBe('');
     process.env.MAI_SUMMARY_MODEL = 'gpt-5.6-luna';
-    expect(summaryModel('codex-cli')).toBe('gpt-5.6-luna');
+    vi.resetModules();
+    const { summaryModel: overriddenSummaryModel } = await import('../llm/provider.js');
+    expect(overriddenSummaryModel('codex-cli')).toBe('gpt-5.6-luna');
     delete process.env.MAI_SUMMARY_MODEL;
   });
   it('status lines: subscription wording when resolved; login-aware reason when not', async () => {

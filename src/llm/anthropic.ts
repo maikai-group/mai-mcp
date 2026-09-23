@@ -1,6 +1,7 @@
 // Anthropic provider — forced tool-use gives schema-enforced structured output.
 // Default behaviour of the pre-refactor summarizer (claude-sonnet-4-6) is preserved.
 import Anthropic from '@anthropic-ai/sdk';
+import { resolveCredential } from '../providers/runtime.js';
 import type { JSONSchema, LLMProvider } from './provider.js';
 
 export class AnthropicProvider implements LLMProvider {
@@ -18,7 +19,9 @@ export class AnthropicProvider implements LLMProvider {
     maxTokens: number;
   }): Promise<unknown | null> {
     try {
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const key = await resolveCredential('anthropic');
+      if (!key) return null;
+      const client = new Anthropic({ apiKey: key, baseURL: 'https://api.anthropic.com' });
       const response = await client.messages.create({
         model: this.model,
         max_tokens: args.maxTokens,
@@ -37,7 +40,7 @@ export class AnthropicProvider implements LLMProvider {
       );
       return block ? block.input : null;
     } catch (err) {
-      console.warn('[mai-llm] Anthropic completeJSON failed:', err);
+      console.warn('[mai-llm] Anthropic completeJSON failed: provider_error');
       return null;
     }
   }

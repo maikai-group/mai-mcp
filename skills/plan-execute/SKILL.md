@@ -63,7 +63,10 @@ These are non-negotiable. No exceptions. No rationalisations.
    `dropped`, or repair a mismatched UUID by title. A `none` header is an explicit no-op.
 
 8. **Operator task bodies stay in My Tasks.** At every task boundary and in the final response,
-   report only pending/blocking/follow-up counts plus `http://127.0.0.1:6601/#/tasks`.
+   report only pending/blocking/follow-up counts plus the exact plan identity and My Tasks URL from
+   the receipt: `<plan title> @ <short current SHA> — <plan-scoped URL>`. For an aggregate receipt
+   covering multiple plans, emit one identity/count/link line per plan. Never reconstruct the URL
+   from a remembered plan ID; use the receipt returned by `mai_plan` or `mai_user_tasks_post`.
    Do not repeat operator-task titles or instructions in chat or board handoffs unless the user explicitly asks to see them there.
    This restriction applies only to already-stored operator task bodies; continue reporting normal
    implementation results, failures, and agent-to-agent work.

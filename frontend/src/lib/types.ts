@@ -156,6 +156,7 @@ export interface UserTaskRow {
   plan_title: string | null;
   plan_path: string | null;
   plan_status: string | null;
+  plan_sha: string | null;
   plan_updated_at: string | null;
 }
 
@@ -166,6 +167,7 @@ export interface UserTaskGroup {
   plan_title: string | null;
   plan_path: string | null;
   plan_status: string | null;
+  plan_sha: string | null;
   pending_count: number;
   blocking_count: number;
   follow_up_count: number;

@@ -37,10 +37,14 @@ import { specFromInputSchema, validateRequiredParams, rejectMergedParams } from 
 import { coordination } from "./coordination/index.js";
 import { TOOLS } from "./tool-defs.js";
 import { finalizeToolResult, mcpBudget, pageBudget } from "./read-budget.js";
+import { measureAndRecordMaiShadow } from './token-mai-shadow.js';
+import type { MaiShadowDraft } from './token-mai-shadow.js';
+import { receiptRoot } from './token-test-shadow.js';
 import { pathToFileURL } from "node:url";
 import { bindChatIdentity, currentChatIdentity } from './session-identity.js';
 
 const PINNED = requirePinnedSlug();
+const maiShadowDrafts = new WeakMap<CallToolResult, MaiShadowDraft>();
 
 // Core tools plus the coordination layer's.
 const ALL_TOOLS = [...TOOLS, ...coordination.toolDefs];
@@ -78,8 +82,8 @@ export function buildServer(
   // included — is capped, so a nudge can never push a read past the budget.
   // handleToolCall converts thrown errors to isError:true, so success and
   // error results both cross this same finalizer; writes are never capped.
-  server.setRequestHandler("tools/call", async (request) => {
-    const result = await handleToolCall(request);
+  server.setRequestHandler("tools/call", async (request, extra) => {
+    const result = await handleToolCall(request, extra.mcpReq.signal);
     // Piggyback rider (coordination facade): the claims heartbeat runs on EVERY
     // call (decision b0fc1969), and appendable results may carry one-line
     // board/claims deltas. The facade owns the full design + gating; the wrapper
@@ -90,14 +94,22 @@ export function buildServer(
     } catch {
       // nudge failures are silent by contract
     }
-    return finalizeToolResult(request.params.name, result, nudge);
+    const delivered = finalizeToolResult(request.params.name, result, nudge);
+    const draftForResult = maiShadowDrafts.get(result);
+    const tool = request.params.name;
+    if (draftForResult && (tool === 'mai_findings' || tool === 'mai_plan')) {
+      try { await measureAndRecordMaiShadow(receiptRoot(), tool, delivered, draftForResult, nudge); }
+      catch { /* shadow telemetry is best effort; delivered is untouched */ }
+    }
+    return delivered;
   });
 
   return server;
 }
 
 const handleToolCall = async (
-  request: { params: { name: string; arguments?: Record<string, unknown> } }
+  request: { params: { name: string; arguments?: Record<string, unknown> } },
+  signal?: AbortSignal,
 ): Promise<CallToolResult> => {
   const { name, arguments: args } = request.params;
   // The wave-2 graph tools parse their own UNKNOWN payload (plan 39): they are
@@ -105,6 +117,17 @@ const handleToolCall = async (
   // array or primitive payload is refused with a precise message instead of
   // being silently converted into an empty object.
   const rawArguments: unknown = request.params.arguments;
+  if (name === 'mai_navigate') {
+    try {
+      const { navigate } = await import('./navigation/service.js');
+      const { renderNavigation } = await import('./navigation/render.js');
+      const report = await navigate(rawArguments, signal);
+      return { content: [{ type: 'text' as const, text: renderNavigation(report, pageBudget()) }] };
+    } catch {
+      return { isError: true, content: [{ type: 'text' as const,
+        text: 'mai_navigate: invalid input or unavailable navigation service. Check question, intent and bounded optional fields.' }] };
+    }
+  }
   if (name === "mai_graph_query" || name === "mai_graph_dead_code"
       || name === "mai_user_tasks" || name === "mai_user_tasks_post"
       || name === "mai_receipt_add" || name === "mai_receipts"
@@ -362,8 +385,11 @@ const handleToolCall = async (
         const { planText } = await import("./plans.js");
         const { mcpBudget } = await import("./read-budget.js");
         // Raw params through: planText is the single selector validator.
-        const text = await planText(params, mcpBudget());
-        return { content: [{ type: "text" as const, text }] };
+        let draft: MaiShadowDraft | undefined;
+        const text = await planText(params, mcpBudget(), (value) => { draft = value; });
+        const result: CallToolResult = { content: [{ type: "text", text }] };
+        if (draft) maiShadowDrafts.set(result, draft);
+        return result;
       }
       case "mai_review_post": {
         const { reviewPost } = await import("./plans.js");
@@ -386,6 +412,7 @@ const handleToolCall = async (
         const { mcpBudget } = await import("./read-budget.js");
         // findingsQuery remains the single boundary: the selector is NOT
         // validated here, only forwarded.
+        let draft: MaiShadowDraft | undefined;
         const text = await findingsQuery({
           plan: params.plan === undefined ? undefined : String(params.plan),
           status: params.status as FindingStatus | undefined,
@@ -394,8 +421,11 @@ const handleToolCall = async (
           finding: params.finding === undefined ? undefined : String(params.finding),
           limit: params.limit === undefined ? undefined : Number(params.limit),
           budget: mcpBudget(),
+          shadow: (value) => { draft = value; },
         });
-        return { content: [{ type: "text" as const, text }] };
+        const result: CallToolResult = { content: [{ type: "text", text }] };
+        if (draft) maiShadowDrafts.set(result, draft);
+        return result;
       }
       case "mai_finding_update": {
         const { findingUpdate } = await import("./plans.js");

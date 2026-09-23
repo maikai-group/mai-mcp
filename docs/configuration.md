@@ -201,7 +201,46 @@ files are never committed.
 | MAI_BRAIN_WEB_PORT | no | 6601 | Port for the review dashboard. |
 | MAI_BRAIN_WEB_BIND | no | 127.0.0.1 | Bind address; anything non-localhost requires `MAI_BRAIN_WEB_TOKEN`. |
 | MAI_BRAIN_WEB_TOKEN | yes if non-localhost | — | Auth token; the server refuses a non-localhost bind without it. |
+| MAI_JEV_ENABLED | no | saved setting, otherwise off | Explicit env override: only `1` enables Jev. A key alone does not enable it. |
+| TYPESAFE_API_KEY | no | saved credential | Explicit environment credential override; an empty value disables fallback to a saved key. |
+| MAI_JEV_MODEL | no | saved model or jev-1.13.0 | Explicit model override; pin a version for comparisons. |
+| MAI_TOKEN_RECEIPTS_DIR | no | ~/.mai/token-shadow | Private, owner-only directory for token-shadow receipts and the read-shadow log; see [token shadow](token-shadow.md). |
 
+## Optional Jev navigation
+
+`mai_navigate` helps an agent connect graph relationships, source declarations, previous decisions and supplied plan excerpts. It is available while the MCP server runs and performs work only when called. Ordinary mai tools continue to work without it.
+
+In Settings → Providers & Connections, save a TypeSafe key and separately enable Jev for the selected project. The next navigation request reads that saved configuration. Environment configuration remains supported: `MAI_JEV_ENABLED`, `TYPESAFE_API_KEY` and `MAI_JEV_MODEL` override saved settings when explicitly present and require reconnecting after environment changes. An explicitly empty key does not fall through to a saved key. The default model is `jev-1.13.0`. Credentials stay server-side; these settings are separate from summary and embedding routing.
+
+Enabled calls send the question and selected graph, source, memory and caller-supplied plan excerpts to TypeSafe. No repository-wide upload or idle scan runs. Existing source exclusions apply; inspect supplied context before sending it.
+
+Example planning call:
+
+    {"question":"Which components enforce plan approval, and what decisions constrain changes?","intent":"layout","terms":["approval","plan review"]}
+
+Example family call:
+
+    {"question":"Where else could validation happen after a persistent write?","intent":"family","mechanism":"A rejecting guard runs only after the durable write it was meant to protect.","terms":["validation","insert"],"context":[{"label":"Current plan, Task 7","text":"Insert the record, then validate its owner."}]}
+
+Other intents are `impact` and `decisions`. Use `seed_nodes` for up to four graph UUIDs already found in this project. For working plans, supply up to twelve labelled excerpts; labels do not cause the server to open a path. Split larger investigations into focused calls and continue any required whole-plan sweep.
+
+Results distinguish source evidence, recorded memory and model relevance. Scores are inspection hints. A result is never plan approval, proof that a defect is real, or proof that no other instances exist. Check current source and preserve existing independent review and finding UUIDs.
+
+Disabled, unavailable, busy or partial results include limitations. Use the cited graph/brain references or a narrower question to continue. One call per server process can be active; each call permits three follow-up retrievals and four evaluations. Provider retries are bounded. The scheduling deadline is 60 seconds, while already-running database reads retain their existing timeouts. Reconnect after changing server environment settings.
+
+The experimental skill preflight covers design, plan authoring, code exploration, plan review and plan-review repair. At their discovery checkpoint, substantive unresolved questions trigger one bounded navigation call; an additional call requires a newly discovered named high-risk uncertainty. Trivial or already-resolved questions skip it. Repair-family navigation requires a confirmed causal mechanism. Agents announce selected evidence transfer before calling; project opt-in avoids repeated confirmation, while disabled/unavailable navigation continues through ordinary tools.
+
+Navigation remains advisory. It does not change approval authority, review breadth, required source checks, family sweeps or approved-plan execution scope. A tool invocation can include several evaluations and HTTP attempts; counting invocations does not measure total cost. The preflight is a private pilot until complete-workflow outcomes justify broader propagation.
+
+### Optional live usefulness evaluation
+
+This integration remains **experimental**. Before making any Jev call for the pilot, define twelve frozen cases: three each for layout, impact, decisions and family. Record source revision, question, seeds/terms/context, hidden expected evidence IDs and distractors in a local evaluation document outside provider state. Include historical defects without exposing later repair or review answers in the prompt.
+
+Compare the same initial adapter retrieval with the full navigation result at the same revision. Use the first ten evidence IDs from each route. Independently verify expected and newly discovered connections against source, preserving corrections to the hidden labels. Calculate `recall@10 = relevant returned / known relevant` and `precision@10 = relevant returned / returned`; empty-result precision is zero, and every case needs at least one known relevant item. Record elapsed milliseconds, HTTP attempts, known input/output tokens, unknown-usage attempts, and UTF-8 source/context bytes actually submitted. Do not invent tokenizer counts or prices.
+
+Run all cases once; if promising, repeat to three total passes (two additional passes after the first), then report median latency and variability. Stop at that fixed maximum. Keep the feature experimental until there are zero scope/provenance failures, aggregate recall is at least baseline, and at least two newly found connections are verified. These are pilot targets, not general accuracy proof. Do not claim cost or agent-token savings without measured usage. Deterministic software verification can complete with this live evaluation explicitly **NOT RUN**.
+
+For reproducible private evaluation, `node build/scripts/navigation-pilot.js prepare CASE NEW_DIR` captures ordinary initial retrieval with a labelled synthetic stop and no Jev inference. `node build/scripts/navigation-pilot.js live CASE NEW_DIR --allow-live` uses the project's already-enabled, pinned `jev-1.13.0` configuration. Both verify the current full HEAD, the Git-resolved build commit, and current index/worktree cleanliness including non-ignored untracked files before retrieval. Missing, failed or ambiguous Git evidence rejects the run. The receipt retains that verified `sourceIdentity`. They require a strict case containing only `caseId`, `sourceRevision` (full source commit), and navigation `input`. Use a new directory under the ignored `.mai-evaluations/` root for each run. Hidden labels belong in a separate file; never add them to a case or input. Receipts contain selected source/memory excerpts and stay private. Preparation can still use the separately configured retrieval/embedding provider. Failed or retried attempts can have unknown usage; incomplete receipts are not evidence of zero cost. Replay can recompute metrics from retained results, but new questions, candidates or unobserved retrieval branches require new inference.
 
 ## Providers — bring your own model
 
@@ -216,6 +255,79 @@ binaries) installs as an optional dependency — several hundred MB in
 cloud embeddings or trigram search. Turn on an LLM provider only if you want
 auto-summaries and candidate-decision extraction on ingest; add a cloud
 embedding key only if you want higher-quality vectors than the local tier.
+
+### Providers & Connections
+
+Open **Settings → Providers & Connections** in the built local dashboard. Set
+`MAI_BRAIN_WEB_TOKEN` for the server and use the dashboard's existing `?token=…`
+mechanism to supply that token; the client stores it and strips it from the URL.
+Provider management requires the token even on localhost. Version 1 requires a
+loopback bind and a same-origin dashboard (`localhost`, `127.0.0.1`, or `::1`);
+remote management and cross-origin mutation requests are rejected.
+
+TypeSafe, Anthropic, OpenAI and Voyage API credentials are installation-wide.
+Jev and code-embedding policies belong to the selected project. **Saving a key
+never enables a feature:** configure summaries, brain embeddings, project Jev
+policy, and project code embeddings separately. Cloud code embeddings retain
+their existing explicit upload acknowledgment and policy revision.
+
+Saved keys are encrypted with AES-256-GCM in `providers.sqlite` beneath the
+platform state root (or `MAI_STATE_HOME`). The master key is held separately in
+the OS credential service, accessed through a bounded helper process. Processes
+running as the same OS user with the same canonical state root share saved
+credentials. They read the current key at each operation, so replacement applies
+to the next request, including the next batch of an existing code-index job.
+An in-flight request may finish using the key it already acquired.
+
+The optional `@napi-rs/keyring` adapter targets macOS Keychain, Windows Credential
+Manager and Linux Secret Service. These target integrations are not a claim that
+every OS/login-service combination has been verified. If the adapter or native
+service is unavailable, use environment credentials; saved-key operations fail
+closed. A missing master key with existing ciphertext requires credential
+re-entry rather than creating a replacement master over unreadable data.
+Provider keys are outside brain database backups. Moving a brain backup to
+another machine does not transfer credentials: enter them again there.
+
+Environment variable **presence** takes precedence over saved credentials:
+`TYPESAFE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `VOYAGE_API_KEY`.
+A nonempty value supplies the effective key; an explicitly empty value disables
+that credential's saved fallback. The dashboard names the controlling variable
+and makes replacement read-only, while allowing removal of an overridden saved
+credential. Managed dashboard installation preserves these empty overrides in
+its private `service.env`; saved SQLite credentials are never copied into it.
+
+Explicit summary/embedding flags also override saved enablement: only `1`
+enables the feature; `0` or an empty value disables it. Summary provider/model
+and subscription-fallback settings preserve their environment precedence.
+When either embedding-key variable is present, the existing environment-driven
+brain selection applies (nonempty OpenAI, then Voyage, then local); otherwise
+the saved brain route applies. Saved summary and brain routing is captured once
+per process. **Restart all affected MCP and ingest processes after changing
+routing.** The page can report only the web process's active snapshot.
+
+Connection tests run only on request. Anthropic and OpenAI tests establish
+**authentication only**, not inference entitlement. TypeSafe and Voyage tests
+make a small usage-bearing request and require an explicit acknowledgment.
+Status contains metadata and the matching test result, never a saved key.
+`openai-compatible` endpoints remain environment-only: a saved OpenAI key is
+never sent to a custom endpoint. Official OpenAI and Anthropic adapters pin their
+official API endpoints even when SDK base-URL environment overrides are present.
+
+Claude Code and Codex use native CLI sessions, separate from API credentials.
+Explicit native-status refresh reports Claude installed with authentication
+unverified, and Codex authenticated, unauthenticated, or unavailable. It does
+not identify an account. Use `claude` or `codex login` in your terminal for setup;
+subscription children receive no saved API credentials.
+
+### Jev provider policy
+
+The shared credential resolver and selected-project Jev policy support the
+experimental [optional navigation tool](#optional-jev-navigation). Enabling its
+policy permits requested navigation calls to send selected questions, code,
+graph, memory and context externally; saving policy alone makes no provider request. `MAI_JEV_ENABLED` and `MAI_JEV_MODEL`
+override saved policy by presence. An empty enabled override disables Jev; an
+empty model override is invalid. Policy and credential changes apply on the
+next resolution without restarting the process.
 
 ### Have Claude Code? You're done
 
@@ -417,9 +529,11 @@ built app from `frontend/dist`; until you run `build:web` it returns a short
 
 **My Tasks** ingests plan and operator assignments, grouping both Pending and
 Completed work by linked plan with an Unlinked fallback; Completed also includes
-dismissed waivers. Removing an individual terminal task or a completed card hides
-that history durably from ordinary web and agent reads without hard-deleting it,
-and v1 has no restore control in the dashboard.
+dismissed waivers. Use a card's **Focus** action to show only that assignment
+group with Outstanding and Completed sections visible together; linked focus is
+deep-linkable and survives reloads. Removing an individual terminal task or a
+completed card hides that history durably from ordinary web and agent reads
+without hard-deleting it, and v1 has no restore control in the dashboard.
 
 ![mai dashboard — code graph](assets/graph.png)
 

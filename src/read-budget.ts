@@ -21,7 +21,7 @@ export const MCP_READ_TOOLS = [
   'mai_graph_find', 'mai_graph_neighbors', 'mai_graph_trace', 'mai_graph_impact',
   'mai_graph_stale', 'mai_ideas', 'mai_plan', 'mai_findings', 'mai_board_read',
   'mai_claims', 'mai_shared', 'mai_graph_query', 'mai_graph_dead_code',
-  'mai_user_tasks', 'mai_receipts',
+  'mai_user_tasks', 'mai_receipts', 'mai_navigate',
 ] as const;
 export const MCP_NON_READ_TOOLS = [
   'mai_remember', 'mai_lesson_add', 'mai_link', 'mai_retract', 'mai_unretract',
@@ -32,6 +32,7 @@ export const MCP_NON_READ_TOOLS = [
 ] as const;
 export type McpReadTool = (typeof MCP_READ_TOOLS)[number];
 export const MCP_READ_NARROWING: Record<McpReadTool, string> = {
+  mai_navigate: 'inspect cited nodes/decisions with ordinary mai tools, or pass fewer seeds and a narrower question',
   // Five task-prime routes name their literal MCP tool as well as the CLI
   // spelling: a shortened prime section must say the exact call that recovers
   // it (plan 38 R6), not only how to narrow the read that produced it.

@@ -623,7 +623,9 @@ describe('Bridge B — plan lifecycle auto-advance (plan 21 R6-R10)', () => {
   /** Register the fixture plan, then BACK-DATE its created_at so the anchor sits
    * two hours in the past and fixture commits can be placed on either side of
    * it without any future-dated rows. */
-  async function approvedPlan(status = 'approved'): Promise<{ id: string; slug: string; path: string }> {
+  async function approvedPlan(status = 'approved'): Promise<{
+    id: string; slug: string; path: string; title: string | null; current_sha: string | null;
+  }> {
     const { planRegister } = await import('../plans.js');
     const p = await planRegister({ path: PLAN_REL });
     await admin.query(
@@ -639,7 +641,7 @@ describe('Bridge B — plan lifecycle auto-advance (plan 21 R6-R10)', () => {
         [p.id, p.current_sha]
       );
     }
-    return { id: p.id, slug: p.slug, path: p.path };
+    return { id: p.id, slug: p.slug, path: p.path, title: p.title, current_sha: p.current_sha };
   }
 
   async function seedCommit(a: {
@@ -704,7 +706,9 @@ describe('Bridge B — plan lifecycle auto-advance (plan 21 R6-R10)', () => {
     });
     expect(await advancePlanLifecycle(projectId)).toBe(
       'plan lifecycle [auto]: 1 advanced to executing, 1 note(s) posted, 0 suppressed, 0 stale prompt(s) retracted, 0 failed\n' +
-      'operator tasks: 0 inserted, 0 existing; 0 blocking, 0 follow-up — My Tasks: http://127.0.0.1:6601/#/tasks'
+      'operator tasks: 0 inserted, 0 existing; 0 blocking, 0 follow-up\n' +
+      `- ${plan.title ?? plan.path} @ ${plan.current_sha?.slice(0, 8)} — 0 blocking, 0 follow-up` +
+      ` — My Tasks: http://127.0.0.1:6601/#/tasks?plan=${plan.id}`
     );
     expect(await statusOf(plan.id)).toBe('executing');
     const open = await messages('open');
@@ -872,7 +876,9 @@ describe('Bridge B — plan lifecycle auto-advance (plan 21 R6-R10)', () => {
       expect(await advancePlanLifecycle(projectId)).toBe(
         `plan lifecycle [auto]: 1 advanced to executing, 1 note(s) posted, 0 suppressed, ` +
         `0 stale prompt(s) retracted, 1 failed (${second.rows[0].slug}: second board failure)\n` +
-        `operator tasks: 0 inserted, 0 existing; 0 blocking, 0 follow-up — My Tasks: http://127.0.0.1:6601/#/tasks`
+        `operator tasks: 0 inserted, 0 existing; 0 blocking, 0 follow-up\n` +
+        `- ${first.title ?? first.path} @ ${first.current_sha?.slice(0, 8)} — 0 blocking, 0 follow-up` +
+        ` — My Tasks: http://127.0.0.1:6601/#/tasks?plan=${first.id}`
       );
       expect(await statusOf(first.id)).toBe('executing');
       expect(await statusOf(second.rows[0].id)).toBe('approved');
@@ -880,6 +886,45 @@ describe('Bridge B — plan lifecycle auto-advance (plan 21 R6-R10)', () => {
     } finally {
       coordination.postPlanThreadNote = real;
     }
+  });
+
+  it('lists one exact task target for every successful multi-plan transition', async () => {
+    const first = await approvedPlan();
+    fs.writeFileSync(path.join(repo, 'second.md'), '# Second plan\n');
+    const secondSha = await import('node:crypto').then(({ createHash }) =>
+      createHash('sha256').update(fs.readFileSync(path.join(repo, 'second.md'))).digest('hex'));
+    const second = await admin.query<{ id: string; slug: string }>(
+      `INSERT INTO plans (project_id, slug, path, title, status, current_sha, created_at, updated_at)
+       VALUES ($1, 'plan-97-second', 'second.md', 'Second', 'approved',
+               $2, now() - interval '2 hours', now() - interval '1 second')
+       RETURNING id, slug`,
+      [projectId, secondSha]
+    );
+    await admin.query(
+      `INSERT INTO plan_reviews
+         (plan_id,pass,kind,reviewer_agent,verdict,plan_sha,synthesis,created_at)
+       VALUES ($1,1,'blind','plan43-reviewer','approved',$2,'approved',now()-interval '2 hours')`,
+      [second.rows[0].id, secondSha]
+    );
+    await admin.query(`UPDATE plans SET updated_at = now() WHERE id = $1`, [first.id]);
+    await seedCommit({
+      hash: '05'.repeat(20), message: `feat: ${first.slug}`, agoMs: 1 * HOURS, files: ['src/first.ts'],
+    });
+    await seedCommit({
+      hash: '06'.repeat(20), message: 'feat: plan-97-second', agoMs: 1 * HOURS, files: ['src/second.ts'],
+    });
+
+    const { advancePlanLifecycle } = await import('../git/plan-lifecycle.js');
+    const receipt = await advancePlanLifecycle(projectId);
+    expect(receipt).toContain('plan lifecycle [auto]: 2 advanced to executing');
+    expect(receipt).toContain(
+      `- ${first.title ?? first.path} @ ${first.current_sha?.slice(0, 8)} — 0 blocking, 0 follow-up` +
+      ` — My Tasks: http://127.0.0.1:6601/#/tasks?plan=${first.id}`
+    );
+    expect(receipt).toContain(
+      `- Second @ ${secondSha.slice(0, 8)} — 0 blocking, 0 follow-up` +
+      ` — My Tasks: http://127.0.0.1:6601/#/tasks?plan=${second.rows[0].id}`
+    );
   });
 
   it('revalidates suggest-executing after the lock and never downgrades a concurrently executed plan', async () => {

@@ -40,9 +40,32 @@ const CITATION_SCHEMA: JSONObject = {
 
 export const TOOLS: Tool[] = [
   {
+    name: 'mai_navigate',
+    description: 'Optional Jev-assisted navigation of this project: layout, impact, decisions, or defect families. Returns bounded evidence and gaps, not approval. Requires configured opt-in; disabled users can use ordinary graph/search tools.',
+    inputSchema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        question: { type: 'string', minLength: 1, maxLength: 1000 },
+        intent: { type: 'string', enum: ['layout', 'impact', 'decisions', 'family'] },
+        seed_nodes: { type: 'array', maxItems: 4, uniqueItems: true,
+          items: { type: 'string', pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' } },
+        terms: { type: 'array', maxItems: 4, uniqueItems: true,
+          items: { type: 'string', minLength: 1, maxLength: 100 } },
+        context: { type: 'array', maxItems: 12, items: {
+          type: 'object', additionalProperties: false, required: ['label', 'text'],
+          properties: { label: { type: 'string', minLength: 1, maxLength: 160 },
+            text: { type: 'string', minLength: 1, maxLength: 1600 } },
+        } },
+        mechanism: { type: 'string', minLength: 1, maxLength: 1000,
+          description: 'Required only for family intent: the causal failure to look for.' },
+      },
+      required: ['question', 'intent'],
+    },
+  },
+  {
     name: "mai_search",
     description:
-      "Unified search over decisions, lessons, and plan/spec pointers (path:line). Call BEFORE proposing or writing — it mints the write-gate token your write needs.",
+      "Search decisions, lessons and plan/spec path:line pointers BEFORE proposing/writing; mints write-gate tokens.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -107,7 +130,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_git_context",
     description:
-      "Branches, worktrees and recent commits with file stats and decisions; filter by paths/keywords.",
+      "Branches/worktrees, recent commits, file stats and decisions; filter paths/keywords.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -121,7 +144,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_git_show",
     description:
-      "Commit metadata/file stats by hash (≥7 chars). patch:true reads a bounded live diff; never stored.",
+      "Commit metadata/file stats (hash ≥7 chars); patch:true adds a bounded live diff, never stored.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -136,7 +159,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_git_trace_decision",
     description:
-      "Trace a decision ID from search/recall: decision → session → commits → files → graph nodes.",
+      "Trace a recalled decision ID through session, commits, files and graph nodes.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -149,7 +172,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_remember",
     description:
-      "Log a durable decision (short headline). Requires a prior mai_search/mai_recall this session + a structured citation (see error for format).",
+      "Log a decision headline; requires this session's mai_search/mai_recall and structured citation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -179,16 +202,16 @@ export const TOOLS: Tool[] = [
           type: "array",
           items: { type: "string" },
           description:
-            "Searchable terms (lowercase, kebab-case); prefer domain-specific over generic.",
+            "Domain-specific lowercase kebab-case search terms.",
         },
         confidence: { type: "number", description: "0-1 confidence (default 0.8)." },
         source: {
           type: "string",
           enum: ["user-approved", "agent-inferred", "user-selected"],
           description:
-            "Provenance. user-approved=the user explicitly said to log it; user-selected=user picked a dialog option (chosen→description, rest→alternatives); agent-inferred=proposed (→review queue). Default agent-inferred.",
+            "user-approved=explicitly told to log; user-selected=dialog choice (chosen→description, others→alternatives); agent-inferred=proposal for review (default).",
         },
-        description: { type: "string", description: "One-sentence headline. Put detail in reasoning and execution status in mai_progress. Provide this field last (harness limitation)." },
+        description: { type: "string", description: "One-sentence headline; details in reasoning, status in mai_progress. Provide LAST (harness bug)." },
       },
       required: ["citation", "decision_type", "description"],
       additionalProperties: false,
@@ -197,7 +220,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_lesson_add",
     description:
-      "Add a durable rule (lesson); similar lessons reinforce, not duplicate. Needs a prior mai_search this session + a structured citation (see error for format).",
+      "Add/reinforce a durable lesson; requires this session's mai_search and structured citation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -216,7 +239,7 @@ export const TOOLS: Tool[] = [
           type: "number",
           description: "0-1 starting confidence (default 0.50).",
         },
-        rule: { type: "string", description: "ONE line — the takeaway rule. why/where/how go in the why/context/how_to_apply fields. PROVIDE THIS FIELD LAST — a harness bug eats the field after a long value." },
+        rule: { type: "string", description: "One-line takeaway. Put why/where/how in why/context/how_to_apply. Provide LAST (harness drops following field)." },
       },
       required: ["rule", "citation"],
       additionalProperties: false,
@@ -254,7 +277,7 @@ export const TOOLS: Tool[] = [
     // this rewrite costs only +27 serialized chars (measured).
     name: "mai_retract",
     description:
-      "Propose retracting a decision. Agents MUST pass propose:true — it files an operator review candidate and retracts nothing. Direct retraction is operator-only (dashboard/CLI).",
+      "Agents must pass propose:true: queues operator review, retracts nothing. Direct retraction is operator-only (dashboard/CLI).",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -262,7 +285,7 @@ export const TOOLS: Tool[] = [
         reason: {
           type: "string",
           description:
-            "Why (superseded/incorrect/no-longer-applies). Required — no-reason retraction is blocked.",
+            "Required reason: superseded, incorrect or no longer applicable.",
         },
         propose: {
           type: "boolean",
@@ -275,7 +298,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "mai_unretract",
-    description: "Reverse a retraction (restores still_valid=true, clears retracted_at + reason).",
+    description: "Restore still_valid=true; clear retracted_at and retraction reason.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -288,7 +311,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_promote",
     description:
-      "Promote an agent-inferred decision to 'user-approved' (raises confidence). Use after the user confirms a queued decision.",
+      "After user confirmation, promote a queued agent-inferred decision to user-approved; raises confidence.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -302,7 +325,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_globalize",
     description:
-      "**APPROVAL-GATED: never call without the user's explicit approval.** Moves a lesson to the global layer readable by ALL projects. Propose it, wait for 'yes', then call.",
+      "Requires explicit user approval: propose, wait for yes, then move a lesson to global visibility across ALL projects.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -316,7 +339,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_report",
     description:
-      "Daily report: decisions added (by source), retracted, the review queue, and old + low-confidence entries.",
+      "Daily additions by source, retractions, review queue, and old/low-confidence entries.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -328,7 +351,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_review",
     description:
-      "Review queue: agent-inferred + low-confidence decisions + curation candidates. Promote with mai_promote; retiring is operator-only (dashboard/CLI).",
+      "Queue of agent-inferred/low-confidence decisions and curation candidates. Promote: mai_promote. Retire: operator dashboard/CLI.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -340,7 +363,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_violations",
     description:
-      "Recent write-gate rejections, with recovery status. Diagnostic for blocked writes.",
+      "Write-gate rejections and recovery status; blocked-write diagnostics.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -388,7 +411,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_topics",
     description:
-      "Catalog of this project's context topics. Call first if you don't know which topic matches your task.",
+      "Project context-topic catalog; call to find the right topic.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -398,7 +421,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_get_context",
     description:
-      "Load a single project context topic by name (full markdown). Use after mai_topics/mai_prime tells you which topic you need.",
+      "Load a full project topic named by mai_topics/mai_prime.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -414,7 +437,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_note",
     description:
-      "Append a structured note to today's session log (decisions/progress/todos/questions). Requires per-type evidence. See error for format.",
+      "Append today's structured session note: decisions/progress/todos/questions. Per-type evidence required; errors explain format.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -485,7 +508,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_progress",
     description:
-      "Milestone journal: call when something verifiably lands. Reference the work via tool_call_id or file_path.",
+      "Record a verified milestone; cite tool_call_id or file_path.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -495,7 +518,7 @@ export const TOOLS: Tool[] = [
         },
         evidence: {
           type: "object",
-          description: "Required. The progress evidence: reference the work via tool_call_id or file_path.",
+          description: "Required evidence: tool_call_id or file_path.",
           oneOf: [
             {
               type: "object",
@@ -554,7 +577,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_graph_trace",
     description:
-      "How does A reach B? Shortest full-stack path between two nodes (e.g. a UI component → … → the DB table it writes). Read-only, ≤10 hops. Node ids from mai_graph_find.",
+      "Read-only shortest path A→B, ≤10 hops. Obtain node IDs via mai_graph_find.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -568,7 +591,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_graph_impact",
     description:
-      "Reverse deps before changes, including FK-dependent tables, plus recorded decisions/lessons explaining the shape. Read-only; depth 1-3.",
+      "Read-only reverse deps (depth 1–3), FK-dependent tables, and related decision/lesson rationale.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -582,7 +605,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_graph_query",
     description:
-      "Project graph traversal: one node/text seed, then 0–3 filtered steps. Read-only; caps 20 seeds, 100 edges, 50 nodes.",
+      "Read-only traversal: node/text seed, 0–3 filtered steps; caps 20 seeds/100 edges/50 nodes.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -646,7 +669,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_idea",
     description:
-      "Park an idea on the roadmap board (lands in the Ideas column; the user curates from there). Use scope:'global' only for fleet-wide/business ideas.",
+      "Park an idea for user curation. scope:global only for fleet-wide/business ideas.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -675,7 +698,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_idea_move",
     description:
-      "Evidence-backed roadmap move: planned→building when a plan starts, building→shipped at completion. Other moves are the user's (dashboard).",
+      "Evidence-backed planned→building at plan start; building→shipped at completion. Other moves are operator-owned.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -690,7 +713,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_fact_add",
     description:
-      "Propose a durable user fact for review. Approved facts prime everywhere; use decisions/lessons for project facts.",
+      "Propose a user fact for review; approved facts prime globally. Project facts belong in decisions/lessons.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -710,7 +733,7 @@ export const TOOLS: Tool[] = [
       type: "object" as const,
       properties: {
         path: { type: "string", description: "Repo-relative path to the plan .md." },
-        slug: { type: "string", description: "Stable identity handle; defaults to filename minus date/extension. Same slug = same plan record." },
+        slug: { type: "string", description: "Stable identity; defaults to filename without date/extension. Same slug=same record." },
         title: { type: "string", description: "Human title; defaults to the slug." },
         status: {
           type: "string",
@@ -766,7 +789,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "mai_receipt_add",
-    description: "Append one immutable run receipt (external conductor ledger). Idempotent by receiptKey; byte-different replay of an existing key returns a JSON conflict envelope.",
+    description: "Append immutable receipt; receiptKey is idempotent. Different bytes for an existing key return JSON conflict.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -790,7 +813,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "mai_receipts",
-    description: "Read a plan/cycle receipt ledger oldest-first. Output is budget-capped; use build/read-call.js receipts for uncapped machine reads.",
+    description: "Read plan/cycle receipts oldest-first, budget-capped. Uncapped machine reads: build/read-call.js receipts.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -804,7 +827,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "mai_artifact_put",
-    description: "Store one content-addressed UTF-8 artifact (max 4 MiB), identity = sha256 of the bytes. Idempotent; artifacts are immutable and permanent (no release/delete exists).",
+    description: "Store immutable, permanent UTF-8 artifact (≤4 MiB), ID=SHA256(bytes). Idempotent; no delete/release.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -895,7 +918,7 @@ export const TOOLS: Tool[] = [
   {
     name: "mai_shared",
     description:
-      "Read-only labelled references shared into this project. No args = list; id = detail; part = next detail page. Foreign ids are not citable.",
+      "Read-only shared references: no args=list, id=detail, part=next page. Foreign IDs are not citable.",
     inputSchema: {
       type: "object" as const,
       properties: {

@@ -17,6 +17,9 @@
  */
 
 import OpenAI from "openai";
+import { routingSnapshot, resolveCredential, credentialRevision } from './providers/runtime.js';
+import { readProviderJson } from './providers/checks.js';
+import { isRecord, ProviderConfigError } from './providers/types.js';
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -55,13 +58,24 @@ export function hasCloudKey(v: string | undefined): boolean {
   return (v ?? "").trim() !== "";
 }
 
+let capturedProvider:Provider|undefined;
+let routingUnavailable=false;
+let capturedEnabled=false;
 function detectProvider(): Provider {
-  if (process.env.MAI_EMBEDDINGS !== "1") return null;
-  if (hasCloudKey(process.env.OPENAI_API_KEY)) return "openai";
-  if (hasCloudKey(process.env.VOYAGE_API_KEY)) return "voyage";
-  // Keyless tier — only when the dep can actually load; model availability
-  // (downloaded/fetchable) still checked lazily in embed().
-  return localDepResolvable() ? "local" : null;
+  if(capturedProvider!==undefined)return capturedProvider;
+  try {
+    const saved=routingSnapshot().brain;
+    const enabled=process.env.MAI_EMBEDDINGS===undefined?saved?.enabled??false:process.env.MAI_EMBEDDINGS==='1';
+    capturedEnabled=enabled;
+    if(!enabled)return capturedProvider=null;
+    if(process.env.OPENAI_API_KEY!==undefined||process.env.VOYAGE_API_KEY!==undefined){
+      if(hasCloudKey(process.env.OPENAI_API_KEY))return capturedProvider='openai';
+      if(hasCloudKey(process.env.VOYAGE_API_KEY))return capturedProvider='voyage';
+      return capturedProvider=localDepResolvable()?'local':null;
+    }
+    if(saved)return capturedProvider=saved.provider;
+    return capturedProvider=localDepResolvable()?'local':null;
+  }catch{routingUnavailable=true;return capturedProvider=null;}
 }
 
 /** Stable per-provider model id — stamped on writes, filtered on reads. */
@@ -300,7 +314,9 @@ function localWeightsPresent(): boolean {
 }
 
 export function embeddingsStatus(): string {
-  if (process.env.MAI_EMBEDDINGS !== "1") {
+  detectProvider();
+  if(routingUnavailable)return 'unavailable — saved routing could not be read';
+  if (!capturedEnabled) {
     return "disabled — set MAI_EMBEDDINGS=1 to enable.";
   }
   const p = detectProvider();
@@ -415,67 +431,49 @@ function cacheSet(text: string, vec: number[]): void {
   CACHE.set(text, vec);
 }
 
+function cloudFailure(error:unknown):void {
+  const timedOut=error instanceof Error&&/Timeout/.test(error.name);
+  const status=isRecord(error)&&typeof error.status==='number'?error.status:undefined;
+  const reason=error instanceof ProviderConfigError?'store_unavailable':timedOut?'timeout':status!==undefined?'http':'network';
+  noteCloudResult(false,timedOut);
+  console.warn('[brain2-embed]',reason,...(status===undefined?[]:[status]));
+}
+function embeddingVector(value:unknown):number[]|null {
+  if(!isRecord(value)||!Array.isArray(value.data)||value.data.length!==1)return null;
+  const row:unknown=value.data[0];
+  if(!isRecord(row)||!Array.isArray(row.embedding)||row.embedding.length===0)return null;
+  const vector:unknown[]=row.embedding;
+  return vector.every((n):n is number=>typeof n==='number'&&Number.isFinite(n))?vector:null;
+}
 async function embedOpenAI(text: string): Promise<number[] | null> {
   try {
-    const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      timeout: CLOUD_EMBED_TIMEOUT_MS,
-      maxRetries: 0, // deterministic wall time — see note above
-    });
-    const response = await client.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text.slice(0, 8000),
-    });
-    const vec = response.data[0]?.embedding ?? null;
-    noteCloudResult(vec !== null);
-    return vec;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    noteCloudResult(false, /timed? ?out|timeout/i.test(msg));
-    console.warn("[brain2-embed] OpenAI embed failed:", msg.split("\n")[0]);
-    return null;
-  }
+    const key=await resolveCredential('openai');
+    if(!key){noteCloudResult(false);console.warn('[brain2-embed] missing_key');return null;}
+    const client=new OpenAI({apiKey:key,baseURL:'https://api.openai.com/v1',timeout: CLOUD_EMBED_TIMEOUT_MS,maxRetries: 0});
+    const response=await client.embeddings.create({model:'text-embedding-3-small',input:text.slice(0,8000)});
+    const vec=embeddingVector(response);noteCloudResult(vec!==null);
+    if(!vec)console.warn('[brain2-embed] invalid_response');return vec;
+  }catch(error){cloudFailure(error);return null;}
 }
-
 async function embedVoyage(text: string): Promise<number[] | null> {
+  let response:Response|undefined;
   try {
-    const response = await fetch("https://api.voyageai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.VOYAGE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "voyage-3",
-        input: [text.slice(0, 8000)],
-      }),
-      // Native cancellation: the request is actually aborted, unlike the
-      // local tier's withTimeout, which can only stop waiting.
-      signal: AbortSignal.timeout(CLOUD_EMBED_TIMEOUT_MS),
+    const key=await resolveCredential('voyage');
+    if(!key){noteCloudResult(false);console.warn('[brain2-embed] missing_key');return null;}
+    const signal=AbortSignal.timeout(CLOUD_EMBED_TIMEOUT_MS);
+    response=await fetch('https://api.voyageai.com/v1/embeddings',{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${key}`},
+      body:JSON.stringify({model:'voyage-3',input:[text.slice(0,8000)]}),signal,redirect:'error',
     });
-    if (!response.ok) {
-      noteCloudResult(false);
-      console.warn(
-        "[brain2-embed] Voyage embed failed:",
-        response.status,
-        await response.text()
-      );
-      return null;
-    }
-    const data = (await response.json()) as {
-      data?: Array<{ embedding?: number[] }>;
-    };
-    const vec = data.data?.[0]?.embedding ?? null;
-    noteCloudResult(vec !== null);
-    return vec;
-  } catch (err) {
-    // AbortSignal.timeout rejects with a TimeoutError DOMException.
-    const timedOut = err instanceof Error && err.name === "TimeoutError";
-    noteCloudResult(false, timedOut);
-    console.warn("[brain2-embed] Voyage embed error:", err);
-    return null;
-  }
+    if(!response.ok){noteCloudResult(false);console.warn('[brain2-embed] http',response.status);return null;}
+    let vec:number[]|null;
+    try{vec=embeddingVector(await readProviderJson(response,262144,signal));}
+    catch(error){if(signal.aborted)throw signal.reason;noteCloudResult(false);console.warn('[brain2-embed] invalid_response');return null;}
+    noteCloudResult(vec!==null);if(!vec)console.warn('[brain2-embed] invalid_response');return vec;
+  }catch(error){cloudFailure(error);return null;}
+  finally{await response?.body?.cancel().catch(()=>{});}
 }
+let cloudCredentialToken:string|undefined;
 
 export async function embed(text: string): Promise<number[] | null> {
   const provider = detectProvider();
@@ -485,6 +483,12 @@ export async function embed(text: string): Promise<number[] | null> {
   const key = `${provider}|${text}`;
   const cached = cacheGet(key);
   if (cached) return cached;
+
+  if(provider==='openai'||provider==='voyage'){
+    let token:string;
+    try{token=credentialRevision(provider);}catch(error){cloudFailure(error);return null;}
+    if(token!==cloudCredentialToken){cloudCredentialToken=token;cloudConsecutiveFailures=0;cloudRetryAfter=0;cloudTimeoutFailures=0;}
+  }
 
   // Cloud cooldown (R5): after CLOUD_FAIL_THRESHOLD consecutive failures the
   // provider is presumed down. Skipping it keeps search fast on trigram

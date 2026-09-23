@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installFakeTool } from './support/fake-tool.js';
-import { dashboardBuildIdentity, dashboardStatusBuild } from '../scripts/dashboard.js';
+import { DASHBOARD_PRESERVE_EMPTY_PROVIDER_ENV_KEYS, dashboardBuildIdentity, dashboardStatusBuild } from '../scripts/dashboard.js';
 import {
   LAUNCHD_LABEL,
   SCHEDULER_NAME,
@@ -830,5 +830,27 @@ describe('thin operator wrapper contracts', () => {
     expect(guard).toBeLessThan(source.indexOf('Get-Command node.exe'));
     expect(guard).toBeLessThan(source.indexOf('& $Node @Arguments'));
     expect(source).not.toContain('schtasks');
+  });
+});
+
+
+describe('provider override installation round trip',()=>{
+  for(const key of DASHBOARD_PRESERVE_EMPTY_PROVIDER_ENV_KEYS){
+    it.each(['inherited','checkout','absent'])('%s empty/absent '+key+' survives the installed status boundary',async source=>{
+      const h=harness();
+      if(source==='inherited'){h.env[key]='';fs.writeFileSync(path.join(h.checkout,'.env'),key+'=synthetic-checkout-value\n');}
+      if(source==='checkout')fs.writeFileSync(path.join(h.checkout,'.env'),key+'=\n');
+      await install(h);
+      const text=fs.readFileSync(installedPaths(h,HOST).environment,'utf8');
+      if(source==='absent')expect(text).not.toContain(key+'=');else expect(text.split('\n')).toContain(key+'=');
+      expect(h.statusEnvironments.length).toBeGreaterThan(0);
+      for(const env of h.statusEnvironments){expect(Object.hasOwn(env,key)).toBe(source!=='absent');if(source!=='absent')expect(env[key]).toBe('');}
+      expect(fs.readFileSync(installedPaths(h,HOST).definition,'utf8')).not.toContain('synthetic-checkout-value');
+    });
+  }
+  it('continues omitting an empty unrelated bind setting',async()=>{
+    const h=harness();h.env.MAI_BRAIN_WEB_BIND='';await install(h);
+    expect(fs.readFileSync(installedPaths(h,HOST).environment,'utf8')).not.toContain('MAI_BRAIN_WEB_BIND=');
+    expect(h.statusEnvironments.every(env=>!Object.hasOwn(env,'MAI_BRAIN_WEB_BIND'))).toBe(true);
   });
 });

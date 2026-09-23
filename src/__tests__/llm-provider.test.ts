@@ -4,6 +4,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../providers/runtime.js', () => import('./support/provider-runtime-mock.js'));
+
 const KEYS = [
   'MAI_LLM_SUMMARY',
   'MAI_LLM_PROVIDER',
@@ -21,6 +23,7 @@ const saved: Record<string, string | undefined> = {};
 const originalReasoning = process.env.MAI_CODEX_CLI_REASONING;
 let envCaptured = false;
 function setEnv(env: Partial<Record<(typeof KEYS)[number], string>>): void {
+  vi.resetModules();
   if (!envCaptured) {
     for (const k of KEYS) saved[k] = process.env[k];
     envCaptured = true;

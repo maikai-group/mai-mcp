@@ -21,17 +21,23 @@ const saved: Record<string, string | undefined> = {
   MAI_AGENT_ID: process.env.MAI_AGENT_ID,
   MAI_BRAIN_ROOT: process.env.MAI_BRAIN_ROOT,
   MAI_EMBEDDINGS: process.env.MAI_EMBEDDINGS,
+  MAI_TOKEN_RECEIPTS_DIR: process.env.MAI_TOKEN_RECEIPTS_DIR,
 };
 process.env.MAI_PROJECT_SLUG = 'plan23-test';
 process.env.MAI_DB_URL = requireDisposableTestDbUrl();
 process.env.MAI_LLM_SUMMARY = '0';
 process.env.MAI_AGENT_ID = 'tester@vitest';
+// Routing is captured on first use; configure this semantic fixture before
+// plan registration can snapshot the default disabled route.
+process.env.MAI_EMBEDDINGS = '1';
 
 // paths.ts captures BRAIN_ROOT at module load, so the fixture root and
 // MAI_BRAIN_ROOT must both exist BEFORE any app module is first imported —
 // i.e. here at module top, not in beforeAll.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'plan23-'));
 process.env.MAI_BRAIN_ROOT = root;
+const shadowRoot = path.join(root, 'token-shadow');
+process.env.MAI_TOKEN_RECEIPTS_DIR = shadowRoot;
 
 const admin = new Pool({ connectionString: process.env.MAI_DB_URL });
 const planRel = 'docs/2026-08-12-plan-23-fixture.md';
@@ -61,6 +67,8 @@ function reconstruct(parts: readonly string[], kind: 'synthesis' | 'finding'): s
 
 beforeAll(async () => {
   await import('../db.js'); // dotenv defusal before the fixture writes
+  const { setLocalEmbedderForTests } = await import('../embeddings.js');
+  setLocalEmbedderForTests(async () => Array.from({ length: 384 }, (_, i) => i === 7 ? 1 : 0));
   fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
   fs.writeFileSync(path.join(root, planRel), '# Fixture plan\n');
   await admin.query(`DELETE FROM projects WHERE slug = 'plan23-test'`);
@@ -227,10 +235,10 @@ describe('read budget — pure contract', () => {
     expect(finalized.content[0].text?.length).toBeLessThanOrEqual(READ_CHAR_BUDGET);
     expect(parseBudgetPage(finalized.content[0].text ?? '')?.body).toBe(first.bodyPart);
   });
-  it('partition is 28 reads plus 19 non-reads with no duplicate', () => {
-    expect(MCP_READ_TOOLS).toHaveLength(28);
+  it('partition is 29 reads plus 19 non-reads with no duplicate', () => {
+    expect(MCP_READ_TOOLS).toHaveLength(29);
     expect(MCP_NON_READ_TOOLS).toHaveLength(19);
-    expect(new Set([...MCP_READ_TOOLS, ...MCP_NON_READ_TOOLS]).size).toBe(47);
+    expect(new Set([...MCP_READ_TOOLS, ...MCP_NON_READ_TOOLS]).size).toBe(48);
   });
 });
 
@@ -279,6 +287,64 @@ describe('mai_plan — compact writes and bounded review parts', () => {
     const out = await planText({ path: planRel, passes: 'all' }, mcpBudget());
     expect(out.length).toBeLessThanOrEqual(READ_CHAR_BUDGET);
     expect(out).toContain('pass:"');            // not an unbounded dump
+  });
+
+  it('builds a plan candidate from the same registration and preserves the summary', async () => {
+    const plans = await import('../plans.js');
+    const pool = (await import('../db.js')).getPool();
+    const query = vi.spyOn(pool, 'query');
+    const baseline = await plans.planText({ path: planRel, passes: 'all' }, mcpBudget());
+    const baselineQueries = query.mock.calls.length;
+    query.mockClear();
+    let draft: import('../token-mai-shadow.js').MaiShadowDraft | undefined;
+    const again = await plans.planText({ path: planRel, passes: 'all' }, mcpBudget(), (value) => { draft = value; });
+    expect(query.mock.calls.length).toBe(baselineQueries);
+    query.mockRestore();
+    expect(again).toBe(baseline);
+    expect(draft?.kind).toBe('candidate');
+    if (draft?.kind === 'candidate') {
+      expect(draft.text).toContain('pass 1 [blocked]');
+      expect(draft.text).toContain('pass 2 [approved]');
+      expect(draft.text).toContain('pass:"1"');
+      expect(draft.text).toContain('pass:"2"');
+      expect(draft.text).toContain('  findings:');
+    }
+    let latestDraft: import('../token-mai-shadow.js').MaiShadowDraft | undefined;
+    await plans.planText({ path: planRel }, mcpBudget(), (value) => { latestDraft = value; });
+    expect(latestDraft?.kind).toBe('candidate');
+    if (latestDraft?.kind === 'candidate') {
+      expect(latestDraft.text).toContain('1 earlier pass(es)');
+      expect(latestDraft.text).toContain('pass:"N"');
+      expect(latestDraft.text).toContain('passes:"all"');
+    }
+    let excluded: import('../token-mai-shadow.js').MaiShadowDraft | undefined;
+    await plans.planText({ path: planRel, status: 'reviewing' }, mcpBudget(), (value) => { excluded = value; });
+    expect(excluded).toBeUndefined();
+    await plans.planText({ path: planRel, pass: '2' }, mcpBudget(), (value) => { excluded = value; });
+    expect(excluded).toBeUndefined();
+  });
+
+  it('records a read-only plan wire candidate and leaves write and pass pages atomic', async () => {
+    const log = path.join(shadowRoot, 'mai-read.jsonl');
+    const before = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').length : 0;
+    await withRealServer('PLAN_SHADOW_NUDGE', async (_call, callRaw) => {
+      const summary = await callRaw('mai_plan', { path: planRel, passes: 'all' });
+      const summaryJson = JSON.stringify(summary);
+      expect(summaryJson).toContain('PLAN_SHADOW_NUDGE');
+      expect(summaryJson).toContain('pass 2');
+      const rows = fs.readFileSync(log, 'utf8').trim().split('\n');
+      expect(rows).toHaveLength(before + 1);
+      const measured = JSON.parse(rows[rows.length - 1]);
+      expect(measured).toMatchObject({ tool: 'mai_plan', kind: 'candidate' });
+      expect(measured.baselineChars).toBe(summary.content[0] && 'text' in summary.content[0]
+        ? summary.content[0].text?.length : -1);
+      expect(measured.candidateChars).toBeLessThan(measured.baselineChars);
+      const page = await callRaw('mai_plan', { path: planRel, pass: '2' });
+      expect(JSON.stringify(page)).toContain('-- synthesis-body chars=');
+      const write = await callRaw('mai_plan', { path: planRel, status: 'reviewing' });
+      expect(JSON.stringify(write)).toContain('[reviewing]');
+      expect(fs.readFileSync(log, 'utf8').trim().split('\n')).toHaveLength(before + 1);
+    });
   });
 
   it('pass parts reconstruct pass 2 synthesis byte-for-byte', async () => {
@@ -378,6 +444,65 @@ describe('mai_findings — headline mode and bounded single-finding retrieval', 
     expect(out).not.toContain('evidence:');
     expect(out).not.toContain('fix: DELTA fix');
     expect(out.length).toBeLessThanOrEqual(READ_CHAR_BUDGET);
+  });
+
+  it('uses two verbose rows for a real shorter candidate and four for an equal-size skip', async () => {
+    const { findingsQuery, reviewPost } = await import('../plans.js');
+    await freshPlan();
+    await reviewPost({ plan: planRel, kind: 'author', verdict: 'blocked', synthesis: 's',
+      findings: [1, 2].map((i) => ({ severity: 'blocker', title: `SHADOW_VERBOSE_${i}`,
+        location: `src/shadow-${i}.ts:1`, issue: 'I'.repeat(650), evidence: 'E'.repeat(650),
+        fix: 'F'.repeat(250) })) });
+    const pool = (await import('../db.js')).getPool();
+    const query = vi.spyOn(pool, 'query');
+    const baseline = await findingsQuery({ plan: planRel, budget: mcpBudget() });
+    const baselineQueries = query.mock.calls.length;
+    query.mockClear();
+    let draft: import('../token-mai-shadow.js').MaiShadowDraft | undefined;
+    const again = await findingsQuery({ plan: planRel, budget: mcpBudget(), shadow: (value) => { draft = value; } });
+    expect(query.mock.calls.length).toBe(baselineQueries);
+    query.mockRestore();
+    expect(again).toBe(baseline);
+    expect(again.length).toBeLessThan(READ_CHAR_BUDGET);
+    expect(draft?.kind).toBe('candidate');
+    if (draft?.kind === 'candidate') {
+      expect(draft.text.length).toBeLessThan(3000);
+      expect(draft.text.length).toBeLessThan(again.length);
+      expect(draft.text).toContain('SHADOW_VERBOSE_1');
+      expect(draft.text).toContain('SHADOW_VERBOSE_2');
+      expect(draft.text).toContain('finding:"UUID[:part]"');
+    }
+    const log = path.join(shadowRoot, 'mai-read.jsonl');
+    const before = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').length : 0;
+    const nudge = 'SHADOW_NUDGE';
+    await withRealServer(nudge, async (_call, callRaw) => {
+      const delivered = await callRaw('mai_findings', { plan: planRel });
+      expect(delivered.content).toHaveLength(1);
+      const text = delivered.content[0];
+      expect('text' in text && text.text).toContain(nudge);
+      expect(JSON.stringify(delivered)).toContain('SHADOW_VERBOSE_1');
+      const unsafe = path.join(root, 'shadow-not-directory');
+      fs.writeFileSync(unsafe, 'file');
+      process.env.MAI_TOKEN_RECEIPTS_DIR = unsafe;
+      try {
+        const failedStorage = await callRaw('mai_findings', { plan: planRel });
+        expect(JSON.stringify(failedStorage)).toBe(JSON.stringify(delivered));
+      } finally { process.env.MAI_TOKEN_RECEIPTS_DIR = shadowRoot; }
+    });
+    const rows = fs.readFileSync(log, 'utf8').trim().split('\n');
+    expect(rows).toHaveLength(before + 1);
+    const measured = JSON.parse(rows[rows.length - 1]);
+    expect(measured).toMatchObject({ tool: 'mai_findings', kind: 'candidate', candidateChars: expect.any(Number) });
+    expect(measured.baselineChars).toBe(baseline.length + 2 + nudge.length);
+    expect(measured.candidateChars).toBe(draft?.kind === 'candidate' ? draft.text.length + 2 + nudge.length : -1);
+
+    const fourQuery = await hybridFour();
+    let fourDraft: import('../token-mai-shadow.js').MaiShadowDraft | undefined;
+    const four = await findingsQuery({ similar_to: fourQuery, limit: 5, budget: mcpBudget(),
+      shadow: (value) => { fourDraft = value; } });
+    expect(four).toContain('4/4 finding headlines shown');
+    expect(fourDraft).toEqual({ kind: 'skip', reason: 'not-shorter' });
+    for (const name of ['alpha', 'beta', 'gamma', 'delta']) expect(four).toContain(`PLAN23 headline mode ${name}`);
   });
 
   it('pointer names severity/status', async () => {
@@ -759,7 +884,10 @@ describe('long-body renderers — broad shortens, narrow restores', () => {
 /** Connect a real v2 Client to the REAL registered server over a linked pair.
  * The injected nudge makes the piggyback lane deterministic without a clock. */
 async function withRealServer<T>(
-  nudgeText: string, fn: (call: (name: string, args: Record<string, unknown>) => Promise<string>) => Promise<T>,
+  nudgeText: string, fn: (
+    call: (name: string, args: Record<string, unknown>) => Promise<string>,
+    callRaw: (name: string, args: Record<string, unknown>) => ReturnType<import('@modelcontextprotocol/client').Client['callTool']>,
+  ) => Promise<T>,
 ): Promise<T> {
   const { vi } = await import('vitest');
   const savedSlug = process.env.MAI_PROJECT_SLUG;
@@ -780,7 +908,9 @@ async function withRealServer<T>(
         const blocks = Array.isArray(r.content) ? r.content : [];
         return blocks.map((b) => ('text' in b && typeof b.text === 'string' ? b.text : '')).join('\n\n');
       };
-      return await fn(call);
+      const callRaw = (name: string, args: Record<string, unknown>) =>
+        client.callTool({ name, arguments: args });
+      return await fn(call, callRaw);
     } finally {
       await client.close().catch(() => {});
       await server.close().catch(() => {});
@@ -795,24 +925,51 @@ async function withRealServer<T>(
 }
 
 describe('whole-surface backstop and CLI proof', () => {
+  it('serves disabled navigation through the real bounded MCP wrapper', async () => {
+    const { vi } = await import('vitest');
+    const http = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', http);
+    vi.stubEnv('MAI_JEV_ENABLED', '0');
+    vi.stubEnv('TYPESAFE_API_KEY', 'never-return-this-key');
+    try {
+      await withRealServer('n'.repeat(7000), async call => {
+        const navigation = await import('../navigation/service.js');
+        const observed = vi.spyOn(navigation, 'navigate');
+        try {
+          const text = await call('mai_navigate', { question: 'Who calls approval?', intent: 'impact' });
+          expect(text).toContain('disabled');
+          expect(text.length).toBeLessThanOrEqual(READ_CHAR_BUDGET);
+          expect(text).not.toContain('never-return-this-key');
+          expect(observed.mock.calls[0]?.[1]).toBeInstanceOf(AbortSignal);
+        } finally { observed.mockRestore(); }
+      });
+      expect(http).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+  });
+  it('rejects a navigation scope override at the real wire boundary', async () => {
+    await withRealServer('', async call => {
+      const text = await call('mai_navigate', { question: 'Read another project', intent: 'layout', project_id: 'foreign' });
+      expect(text).toContain('invalid input');
+    });
+  });
   const textResult = (text: string, isError = false) =>
     ({ content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) });
 
-  it('built 47 tools equal the read+non-read partition exactly', async () => {
+  it('built 48 tools equal the read+non-read partition exactly', async () => {
     const { TOOLS } = await import('../tool-defs.js');
     const { coordination } = await import('../coordination/index.js');
     const registered = [...TOOLS, ...coordination.toolDefs].map((t) => t.name).sort();
     const classified = [...MCP_READ_TOOLS, ...MCP_NON_READ_TOOLS].sort();
     expect(registered).toEqual(classified);           // exact sorted-array equality
-    expect(registered).toHaveLength(47);
+    expect(registered).toHaveLength(48);
     const { MCP_READ_NARROWING } = await import('../read-budget.js');
     expect(Object.keys(MCP_READ_NARROWING).sort()).toEqual([...MCP_READ_TOOLS].sort());
   });
 
-  it('AST gate binds all 28 reads to one post-nudge finalizer', async () => {
+  it('AST gate binds all 29 reads to one post-nudge finalizer', async () => {
     const { execFileSync } = await import('node:child_process');
     const out = execFileSync('node', ['scripts/check-read-budgets.mjs', '--self-test'], { encoding: 'utf8' });
-    expect(out).toContain('read-budget wire inventory OK (28 reads; one finalizer)');
+    expect(out).toContain('read-budget wire inventory OK (29 reads; one finalizer)');
     expect(out).toContain('read-budget mutation self-test OK');
   });
 

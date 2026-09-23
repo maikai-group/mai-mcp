@@ -293,6 +293,7 @@ export async function advancePlanLifecycle(projectId: string): Promise<string> {
     let taskExisting = 0;
     let taskBlocking = 0;
     let taskFollowUp = 0;
+    const taskTargets: string[] = [];
     const failures: string[] = [];
     for (const e of evals) {
       try {
@@ -333,6 +334,15 @@ export async function advancePlanLifecycle(projectId: string): Promise<string> {
           taskExisting += result.operator_tasks?.existing ?? 0;
           taskBlocking += result.operator_tasks?.blocking ?? 0;
           taskFollowUp += result.operator_tasks?.follow_up ?? 0;
+          if (result.operator_tasks) {
+            const receipt = result.operator_tasks;
+            const identity = receipt.plan_title ?? receipt.plan_path;
+            taskTargets.push(
+              `- ${identity}${receipt.plan_sha ? ` @ ${receipt.plan_sha.slice(0, 8)}` : ''}`
+              + ` — ${receipt.blocking} blocking, ${receipt.follow_up} follow-up`
+              + ` — My Tasks: ${receipt.url}`
+            );
+          }
         }
         if (result.delivery === 'posted') posted++;
         else suppressed++;
@@ -346,7 +356,8 @@ export async function advancePlanLifecycle(projectId: string): Promise<string> {
       (failures.length > 0 ? ` (${failures.join('; ')})` : '');
     return flipped === 0 ? lifecycle : lifecycle +
       `\noperator tasks: ${taskInserted} inserted, ${taskExisting} existing; ` +
-      `${taskBlocking} blocking, ${taskFollowUp} follow-up — My Tasks: http://127.0.0.1:6601/#/tasks`;
+      `${taskBlocking} blocking, ${taskFollowUp} follow-up` +
+      (taskTargets.length > 0 ? `\n${taskTargets.join('\n')}` : '');
   } catch (err) {
     // Only evaluation-wide failures reach here. Per-candidate failures retain
     // the successes already committed and are reported in the aggregate above.

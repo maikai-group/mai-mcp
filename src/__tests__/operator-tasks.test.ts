@@ -327,7 +327,15 @@ describe('plan sync and ad-hoc assignment', () => {
     const { planRegister, planText } = await import('../plans.js');
     const started = await planRegister({ path: plan.path, status: 'executing' });
     expect(started.status).toBe('executing');
-    expect(started.operator_tasks).toMatchObject({ inserted: 1, existing: 0, blocking: 1 });
+    expect(started.operator_tasks).toMatchObject({
+      plan_id: plan.id,
+      plan_title: plan.title,
+      plan_sha: plan.current_sha,
+      inserted: 1,
+      existing: 0,
+      blocking: 1,
+      url: `http://127.0.0.1:6601/#/tasks?plan=${plan.id}`,
+    });
     const before = await admin.query<{ assigned_by_agent: string; assigned_by_session: string }>(
       `SELECT assigned_by_agent,assigned_by_session FROM operator_tasks WHERE plan_id=$1`, [plan.id]
     );
@@ -340,7 +348,9 @@ describe('plan sync and ad-hoc assignment', () => {
     expect(after.rows[0]).toEqual(before.rows[0]);
     const text = await planText({ path: plan.path, status: 'executing' });
     expect(text).toContain(
-      'operator tasks: 0 inserted, 1 existing; 1 blocking, 0 follow-up — My Tasks: http://127.0.0.1:6601/#/tasks'
+      `operator tasks for ${retry.operator_tasks?.plan_title} @ ${retry.operator_tasks?.plan_sha?.slice(0, 8)}: ` +
+      `0 inserted, 1 existing; 1 blocking, 0 follow-up — My Tasks: ` +
+      `http://127.0.0.1:6601/#/tasks?plan=${plan.id}`
     );
 
     fs.writeFileSync(path.join(docs, 'never-registered.md'), '# unregistered\n');
@@ -715,7 +725,7 @@ describe('plan sync and ad-hoc assignment', () => {
   });
 
   it('syncs zero, inserts, retries, rejects changed bodies, and preserves provenance', async () => {
-    const { syncPlanOperatorTasks } = await import('../operator-tasks.js');
+    const { operatorTasksPost, syncPlanOperatorTasks } = await import('../operator-tasks.js');
     const empty = await writeApprovedPlan('docs/empty.md', '# Empty\n');
     expect(await syncPlanOperatorTasks({ plan: empty.id })).toMatchObject({ inserted: 0, existing: 0 });
     const plan = await writeApprovedPlan('docs/one.md');
@@ -727,6 +737,11 @@ describe('plan sync and ad-hoc assignment', () => {
     process.env.MAI_AGENT_ID = 'plan43-agent-b';
     const retry = await syncPlanOperatorTasks({ plan: plan.id });
     expect(retry).toMatchObject({ inserted: 0, existing: 1 });
+    expect(await operatorTasksPost({ mode: 'sync-plan', plan_path: plan.path })).toBe(
+      `operator tasks for ${plan.title} @ ${plan.current_sha?.slice(0, 8)}: ` +
+      `0 inserted, 1 existing; 1 blocking, 0 follow-up — My Tasks: ` +
+      `http://127.0.0.1:6601/#/tasks?plan=${plan.id}`
+    );
     const storedAfter = await admin.query<{ assigned_by_agent: string; assigned_by_session: string; content_hash: string }>(
       `SELECT assigned_by_agent,assigned_by_session,content_hash FROM operator_tasks WHERE plan_id=$1`, [plan.id]
     );
@@ -967,6 +982,8 @@ describe('reads, ordering, and operator transitions', () => {
     const summary = await operatorTasksText({ plan_path: plan.path, detail: 'summary' });
     expect(summary).toContain('pending=2');
     expect(summary).toContain(`plan ${plan.title}`);
+    expect(summary).toContain(`@ ${plan.current_sha?.slice(0, 8)}`);
+    expect(summary).toContain(`http://127.0.0.1:6601/#/tasks?plan=${plan.id}`);
     expect(summary).not.toContain('Plan block');
     const full = await operatorTasksText({ detail: 'full', history: true }, { fullRows: 100, charBudget: 6000 });
     expect(full.length).toBeLessThanOrEqual(6000);

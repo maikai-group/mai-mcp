@@ -5,6 +5,7 @@
 
 import { DB_URL } from "./env.js";
 import fs from "node:fs";
+import { randomUUID } from 'node:crypto';
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -82,6 +83,13 @@ const USAGE = `${dim("mai — mai-brain CLI (zero-LLM-cost)")}
 Usage: mai <command> [args] [flags]
 
 Reads:
+  cache status --host claude|codex --file PATH [--json]   Observed token/cache snapshot from one local transcript
+  cache statusline --host claude [--json]                  Render Claude Code status JSON from stdin
+  tokens report --host claude|codex --file PATH [--json]  Observed usage and tool-result size from one transcript
+  tokens shadow-report [--json]     Hypothetical MAI read-result character proxy from local aggregates
+  tokens shadow-test [--json]      Silent Claude Code passing-test shadow hook
+  tokens show <uuid>               Recover exact private test stdout
+  tokens cleanup                   Remove expired private shadow receipts
   report                          Daily digest        [--days N] [--project S]
   review                          Review queue        [--limit N] [--project S]
   search <query>                  Decisions + lessons [--kind decisions|lessons|all] [--project S]
@@ -218,6 +226,120 @@ const cmdTimeline: CommandFn = async (args) =>
 
 const cmdSessions: CommandFn = async (args) =>
   recentSessions(flagNumber(args, "limit") ?? 10, await pid(args));
+
+const cmdCache: CommandFn = async (args) => {
+  const action = args.positional[0];
+  const host = flagString(args, 'host');
+  const { parseClaudeStatusline, parseCodexEvents, parseClaudeTranscriptEvents,
+    readTranscriptTail, renderCacheLine } = await import('./cache-status.js');
+  if (args.positional.length !== 1 || (action !== 'status' && action !== 'statusline')) {
+    throw new Error('usage: mai cache status --host claude|codex --file PATH [--json] | mai cache statusline --host claude');
+  }
+  const allowed = action === 'status' ? ['host', 'file', 'json'] : ['host', 'json'];
+  for (const key of Object.keys(args.flags)) if (!allowed.includes(key)) throw new Error(`unknown cache flag --${key}`);
+  if (action === 'status') {
+    if (host !== 'claude' && host !== 'codex') throw new Error('--host must be claude|codex');
+    const file = flagString(args, 'file');
+    if (!file) throw new Error('--file PATH is required');
+    if (args.flags.json !== undefined && args.flags.json !== true) throw new Error('--json takes no value');
+    const entries = await readTranscriptTail(file);
+    const snapshot = host === 'codex' ? parseCodexEvents(entries) : parseClaudeTranscriptEvents(entries);
+    return flagBool(args, 'json') ? JSON.stringify(snapshot) : renderCacheLine(snapshot);
+  }
+  if (host !== 'claude') throw new Error('statusline supports --host claude only');
+  if (args.flags.json !== undefined && args.flags.json !== true) throw new Error('--json takes no value');
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const raw of process.stdin) {
+    const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
+    bytes += chunk.length;
+    if (bytes > 1_048_576) throw new Error('Claude statusline input exceeds 1 MiB');
+    chunks.push(chunk);
+  }
+  let payload: unknown;
+  try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw new Error('Claude statusline input must be valid JSON'); }
+  const snapshot = parseClaudeStatusline(payload);
+  return flagBool(args, 'json') ? JSON.stringify(snapshot) : renderCacheLine(snapshot);
+};
+
+const cmdTokens: CommandFn = async (args) => {
+  const action = args.positional[0];
+  if (action === 'report') {
+    if (args.positional.length !== 1) throw new Error('usage: mai tokens report --host claude|codex --file PATH [--json]');
+    for (const key of Object.keys(args.flags)) {
+      if (!['host', 'file', 'json'].includes(key)) throw new Error(`unknown tokens flag --${key}`);
+    }
+    const host = flagString(args, 'host');
+    if (host !== 'codex' && host !== 'claude') throw new Error('--host must be claude|codex');
+    const file = flagString(args, 'file');
+    if (!file) throw new Error('--file PATH is required');
+    if (args.flags.json !== undefined && args.flags.json !== true) throw new Error('--json takes no value');
+    const { readTranscriptTailDetailed } = await import('./cache-status.js');
+    const { buildTokenReport, renderTokenReport } = await import('./token-report.js');
+    const report = buildTokenReport(host, await readTranscriptTailDetailed(file));
+    return flagBool(args, 'json') ? JSON.stringify(report) : renderTokenReport(report);
+  }
+  if (action === 'shadow-report') {
+    if (args.positional.length !== 1) throw new Error('usage: mai tokens shadow-report [--json]');
+    for (const key of Object.keys(args.flags)) if (key !== 'json') throw new Error(`unknown tokens flag --${key}`);
+    if (args.flags.json !== undefined && args.flags.json !== true) throw new Error('--json takes no value');
+    const { readMaiShadowReport, renderMaiShadowReport } = await import('./token-mai-shadow.js');
+    const { receiptRoot } = await import('./token-test-shadow.js');
+    const report = await readMaiShadowReport(receiptRoot());
+    return flagBool(args, 'json') ? JSON.stringify(report) : renderMaiShadowReport(report);
+  }
+  if (action === 'shadow-test') {
+    if (args.positional.length !== 1) throw new Error('usage: mai tokens shadow-test [--json]');
+    for (const key of Object.keys(args.flags)) if (key !== 'json') throw new Error(`unknown tokens flag --${key}`);
+    if (args.flags.json !== undefined && args.flags.json !== true) throw new Error('--json takes no value');
+    try {
+      const {
+        candidateBashResponse, evaluateClaudeTestHook, receiptRoot, storeShadowReceipt,
+      } = await import('./token-test-shadow.js');
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      for await (const raw of process.stdin) {
+        const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
+        bytes += chunk.length;
+        if (bytes > 1_048_576) throw new Error('hook input exceeds 1 MiB');
+        chunks.push(chunk);
+      }
+      const payload: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const decision = evaluateClaudeTestHook(payload);
+      if (decision.kind === 'skip') {
+        return flagBool(args, 'json') ? JSON.stringify({ schemaVersion: 1, kind: 'skip', reason: decision.reason }) : '';
+      }
+      const id = randomUUID();
+      const candidate = `${decision.summary}\nOriginal stdout: ${decision.originalBytes} bytes. Recover: mai tokens show ${id}`;
+      const response = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
+        && 'tool_response' in payload
+        ? candidateBashResponse(payload.tool_response, candidate) : null;
+      if (response === null || candidate.length >= decision.originalChars) {
+        return flagBool(args, 'json') ? JSON.stringify({ schemaVersion: 1, kind: 'skip', reason: 'not-shorter' }) : '';
+      }
+      await storeShadowReceipt(receiptRoot(), id, decision.originalStdout, decision.summary, candidate.length);
+      return flagBool(args, 'json') ? JSON.stringify({
+        schemaVersion: 1, kind: 'candidate', originalChars: decision.originalChars,
+        candidateChars: candidate.length, receiptId: id,
+      }) : '';
+    } catch {
+      return '';
+    }
+  }
+  if (action === 'show') {
+    if (args.positional.length !== 2 || Object.keys(args.flags).length > 0) throw new Error('usage: mai tokens show <uuid>');
+    const { readShadowReceipt, receiptRoot } = await import('./token-test-shadow.js');
+    process.stdout.write(await readShadowReceipt(receiptRoot(), args.positional[1]));
+    return '';
+  }
+  if (action === 'cleanup') {
+    if (args.positional.length !== 1 || Object.keys(args.flags).length > 0) throw new Error('usage: mai tokens cleanup');
+    const { cleanupShadowReceipts, receiptRoot } = await import('./token-test-shadow.js');
+    return String(await cleanupShadowReceipts(receiptRoot()));
+  }
+  throw new Error('usage: mai tokens report|shadow-report|shadow-test|show|cleanup');
+};
 
 const cmdRecall: CommandFn = async (args) => projectRecall(await pid(args));
 
@@ -489,8 +611,11 @@ const cmdVerify: CommandFn = async (args) => {
   const { claudeBinaryAvailable } = await import("./llm/claude-code.js");
   const { codexBinaryAvailable } = await import("./llm/codex-cli.js");
   const { CC_HINT, CODEX_HINT } = await import("./scripts/llm-consent.js");
+  const { routingSnapshot } = await import('./providers/runtime.js');
+  const savedRouting = routingSnapshot();
   const llmLines = [`llm: ${llmProviderStatus()}`];
-  if (detectLLMProviderId() === null && process.env.MAI_LLM_PROVIDER === undefined) {
+  if (savedRouting.summary || savedRouting.brain) llmLines.push('Provider routing: saved locally; environment settings override it. Restart all affected MCP/ingest processes after changes.');
+  if (detectLLMProviderId() === null && process.env.MAI_LLM_PROVIDER === undefined && !savedRouting.summary?.enabled) {
     if (claudeBinaryAvailable()) llmLines.push(CC_HINT);
     if (codexBinaryAvailable()) llmLines.push(CODEX_HINT);
   }
@@ -940,6 +1065,8 @@ const COMMANDS: Record<string, CommandFn> = {
   decisions: cmdDecisions,
   timeline: cmdTimeline,
   sessions: cmdSessions,
+  cache: cmdCache,
+  tokens: cmdTokens,
   recall: cmdRecall,
   edges: cmdEdges,
   violations: cmdViolations,

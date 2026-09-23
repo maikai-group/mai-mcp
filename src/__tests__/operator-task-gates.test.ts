@@ -236,7 +236,7 @@ describe('operator task invariant gate', () => {
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain(
       'operator-task producers OK: planRegister, postPlanNote/Git bridge');
-    expect(result.stdout).toContain('operator-task gate OK (47 tools; 6 indexes)');
+    expect(result.stdout).toContain('operator-task gate OK (48 tools; 6 indexes)');
   });
 
   it('fails closed for missing and malformed inputs', () => {
@@ -551,7 +551,7 @@ describe('operator task invariant gate', () => {
         '--root', complete.root, '--plan44-base', complete.base, '--plan44-impl', complete.impl,
       ]);
       expect(pass.status, pass.stdout + pass.stderr).toBe(0);
-      expect(pass.stdout).toContain('operator-task gate OK (47 tools; 6 indexes)');
+      expect(pass.stdout).toContain('operator-task gate OK (48 tools; 6 indexes)');
     } finally {
       fs.rmSync(complete.root, { recursive: true, force: true });
     }

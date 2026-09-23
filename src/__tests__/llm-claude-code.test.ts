@@ -4,6 +4,8 @@
  * MAI_CC_FIXTURE from provider spawns, so an env selector would silently fall
  * back to the ok default on every mode-switched case. */
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../providers/runtime.js', () => import('./support/provider-runtime-mock.js'));
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -74,6 +76,7 @@ afterAll(() => {
 });
 beforeEach(async () => {
   vi.restoreAllMocks();
+  vi.resetModules();
   const { resetClaudeBinaryProbe } = await import('../llm/claude-code.js');
   resetClaudeBinaryProbe();
   clearMode();

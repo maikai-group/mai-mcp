@@ -13,6 +13,7 @@ export const DESTINATIONS = [
   'sessions',
   'topics',
   'profile',
+  'settings',
 ] as const;
 
 export type Destination = (typeof DESTINATIONS)[number];
@@ -29,6 +30,7 @@ export const DESTINATION_LABELS: Record<Destination, string> = {
   sessions: 'Sessions',
   topics: 'Topics',
   profile: 'Profile',
+  settings: 'Settings',
 };
 
 export function isDestination(v: string): v is Destination {

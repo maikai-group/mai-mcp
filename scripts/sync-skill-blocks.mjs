@@ -29,6 +29,16 @@ const BLOCKS = {
       'skills/mai-receiving-code-review/SKILL.md',
     ],
   },
+  'navigation-preflight': {
+    source: 'skill-blocks/navigation-preflight.md',
+    consumers: [
+      'skills/mai-design/SKILL.md',
+      'skills/write-plan/SKILL.md',
+      'skills/mai-explore/SKILL.md',
+      'skills/plan-review/SKILL.md',
+      'skills/receiving-plan-review/SKILL.md',
+    ],
+  },
 };
 
 const START = (name) => `<!-- mai:shared:${name} start`;

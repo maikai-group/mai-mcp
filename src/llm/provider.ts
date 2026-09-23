@@ -14,6 +14,8 @@
 //                                                        means the user's own CLI default)
 //   MAI_CLAUDE_CODE_MODEL / MAI_CODEX_CLI_MODEL          subscription-provider-specific overrides
 //   MAI_CODEX_CLI_REASONING                              low|medium|high|xhigh|max
+import { credentialConfigured, routingSnapshot } from '../providers/runtime.js';
+import type { SummaryRoute } from '../providers/types.js';
 import { AnthropicProvider } from './anthropic.js';
 import { OpenAIProvider } from './openai.js';
 import { ClaudeCodeProvider, claudeBinaryAvailable } from './claude-code.js';
@@ -66,14 +68,32 @@ function isSubscriptionProviderId(value: string | undefined): value is Subscript
   return value === 'claude-code' || value === 'codex-cli';
 }
 
+interface SummaryConfig {
+  enabled:boolean;provider:LLMProviderId|null;fallback:SubscriptionProviderId|null;
+  baseURL:string|undefined;rawProvider:string;model:string|undefined;claudeModel:string|undefined;codexModel:string|undefined;
+  saved:SummaryRoute|null;unavailable:boolean;
+}
+let capturedSummary:SummaryConfig|undefined;
+function summaryConfig():SummaryConfig {
+  if(capturedSummary)return capturedSummary;
+  let saved:SummaryRoute|null=null;let unavailable=false;
+  try{saved=routingSnapshot().summary;}catch{unavailable=true;}
+  const raw=process.env.MAI_LLM_PROVIDER??saved?.provider??'anthropic';
+  const provider=isLLMProviderId(raw)?raw:null;
+  const fallbackRaw=process.env.MAI_LLM_FALLBACK_PROVIDER??saved?.fallback??undefined;
+  const fallback=isSubscriptionProviderId(fallbackRaw)&&fallbackRaw!==provider?fallbackRaw:null;
+  return capturedSummary={enabled:!unavailable&&(process.env.MAI_LLM_SUMMARY===undefined?saved?.enabled??false:process.env.MAI_LLM_SUMMARY==='1'),
+    provider,fallback,baseURL:process.env.MAI_LLM_BASE_URL,rawProvider:raw,model:process.env.MAI_SUMMARY_MODEL,claudeModel:process.env.MAI_CLAUDE_CODE_MODEL,codexModel:process.env.MAI_CODEX_CLI_MODEL,saved,unavailable};
+}
+
 function providerAvailable(id: LLMProviderId, fallback = false): boolean {
   switch (id) {
     case 'anthropic':
-      return Boolean(process.env.ANTHROPIC_API_KEY);
+      return credentialConfigured('anthropic');
     case 'openai':
-      return Boolean(process.env.OPENAI_API_KEY);
+      return credentialConfigured('openai');
     case 'openai-compatible':
-      return Boolean(process.env.MAI_LLM_BASE_URL && process.env.MAI_SUMMARY_MODEL);
+      return Boolean(summaryConfig().baseURL && summaryConfig().model);
     case 'claude-code':
       return claudeBinaryAvailable();
     case 'codex-cli':
@@ -81,23 +101,14 @@ function providerAvailable(id: LLMProviderId, fallback = false): boolean {
   }
 }
 
-function primaryProviderId(): LLMProviderId | null {
-  const raw = process.env.MAI_LLM_PROVIDER;
-  if (raw === undefined) return 'anthropic';
-  return isLLMProviderId(raw) ? raw : null;
-}
-
-function fallbackProviderId(primary: LLMProviderId | null): SubscriptionProviderId | null {
-  const raw = process.env.MAI_LLM_FALLBACK_PROVIDER;
-  if (!isSubscriptionProviderId(raw) || raw === primary) return null;
-  return raw;
-}
+function primaryProviderId():LLMProviderId|null{return summaryConfig().provider;}
+function fallbackProviderId(_primary:LLMProviderId|null):SubscriptionProviderId|null{return summaryConfig().fallback;}
 
 /** Every ready configured provider in execution order. Callers that reason
  * about possible subscription use must inspect the whole chain, not only the
  * first effective provider. */
 export function detectLLMProviderIds(): LLMProviderId[] {
-  if (process.env.MAI_LLM_SUMMARY !== '1') return [];
+  if (!summaryConfig().enabled) return [];
   const primary = primaryProviderId();
   const fallback = fallbackProviderId(primary);
   const ids: LLMProviderId[] = [];
@@ -114,13 +125,10 @@ export function detectLLMProviderId(): LLMProviderId | null {
 
 /** Model for a resolved provider. MAI_SUMMARY_MODEL overrides the per-provider default. */
 export function summaryModel(id: LLMProviderId): string {
-  const providerOverride = id === 'claude-code'
-    ? process.env.MAI_CLAUDE_CODE_MODEL
-    : id === 'codex-cli'
-      ? process.env.MAI_CODEX_CLI_MODEL
-      : undefined;
-  const override = providerOverride || process.env.MAI_SUMMARY_MODEL;
-  if (override) return override;
+  const config=summaryConfig();
+  const providerOverride=id==='claude-code'?config.claudeModel:id==='codex-cli'?config.codexModel:undefined;
+  if(providerOverride!==undefined||config.model!==undefined)return providerOverride||config.model||defaultModel(id);
+  if(id===config.provider&&id===config.saved?.provider&&config.saved.model)return config.saved.model;
   return defaultModel(id);
 }
 
@@ -128,9 +136,9 @@ export function summaryModel(id: LLMProviderId): string {
  * name a model from a different vendor. Provider-specific overrides are safe. */
 function fallbackSummaryModel(id: LLMProviderId): string {
   const override = id === 'claude-code'
-    ? process.env.MAI_CLAUDE_CODE_MODEL
+    ? summaryConfig().claudeModel
     : id === 'codex-cli'
-      ? process.env.MAI_CODEX_CLI_MODEL
+      ? summaryConfig().codexModel
       : undefined;
   if (override) return override;
   return defaultModel(id);
@@ -173,7 +181,8 @@ function providerDescription(id: LLMProviderId, model: string): string {
 }
 
 export function llmProviderStatus(): string {
-  if (process.env.MAI_LLM_SUMMARY !== '1') {
+  if(summaryConfig().unavailable)return 'unavailable — saved routing could not be read';
+  if (!summaryConfig().enabled) {
     return 'disabled — set MAI_LLM_SUMMARY=1 to enable.';
   }
   const primary = primaryProviderId();
@@ -181,16 +190,16 @@ export function llmProviderStatus(): string {
   const primaryReady = primary !== null && providerAvailable(primary);
   const fallbackReady = fallback !== null && providerAvailable(fallback, true);
   if (!primaryReady && !fallbackReady) {
-    const p = process.env.MAI_LLM_PROVIDER ?? 'anthropic';
+    const p = summaryConfig().rawProvider;
     const fallbackText = fallback ? `; fallback '${fallback}' is also unavailable (${unavailableReason(fallback)})` : '';
     return `enabled flag set but provider '${p}' is not configured (${unavailableReason(primary)})${fallbackText}.`;
   }
   if (!fallback) {
-    if (!primary) return `enabled flag set but provider '${process.env.MAI_LLM_PROVIDER}' is not configured (${unavailableReason(primary)}).`;
+    if (!primary) return `enabled flag set but provider '${summaryConfig().rawProvider}' is not configured (${unavailableReason(primary)}).`;
     return `enabled — provider: ${providerDescription(primary, summaryModel(primary))}`;
   }
   if (!primaryReady) {
-    return `enabled — primary '${primary ?? process.env.MAI_LLM_PROVIDER}' unavailable (${unavailableReason(primary)}); ` +
+    return `enabled — primary '${primary ?? summaryConfig().rawProvider}' unavailable (${unavailableReason(primary)}); ` +
       `using fallback: ${providerDescription(fallback, fallbackSummaryModel(fallback))}`;
   }
   const fallbackStatus = fallbackReady
@@ -206,7 +215,7 @@ function createProvider(id: LLMProviderId, model: string): LLMProvider | null {
     case 'openai':
       return new OpenAIProvider({ model });
     case 'openai-compatible': {
-      const baseURL = process.env.MAI_LLM_BASE_URL;
+      const baseURL = summaryConfig().baseURL;
       if (!baseURL) return null; // unreachable per detection; keeps types honest
       return new OpenAIProvider({ model, baseURL });
     }
@@ -238,14 +247,14 @@ export class FallbackLLMProvider implements LLMProvider {
     try {
       result = await this.primary.completeJSON(args);
     } catch (error) {
-      console.warn(`[mai-llm] ${this.primary.name} threw: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[mai-llm] ${this.primary.name} failed: provider_error`);
     }
     if (result !== null) return result;
     console.warn(`[mai-llm] ${this.primary.name} failed; falling back to ${this.fallback.name}`);
     try {
       return await this.fallback.completeJSON(args);
     } catch (error) {
-      console.warn(`[mai-llm] ${this.fallback.name} threw: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[mai-llm] ${this.fallback.name} failed: provider_error`);
       return null;
     }
   }
@@ -253,7 +262,7 @@ export class FallbackLLMProvider implements LLMProvider {
 
 /** Resolve the configured provider chain, or null if neither provider is ready. */
 export function getLLMProvider(): LLMProvider | null {
-  if (process.env.MAI_LLM_SUMMARY !== '1') return null;
+  if (!summaryConfig().enabled) return null;
   const primaryId = primaryProviderId();
   const fallbackId = fallbackProviderId(primaryId);
   const primary = primaryId && providerAvailable(primaryId)

@@ -18,6 +18,45 @@ import type {
 import { useProjects } from '../../shell/project';
 
 type TaskTab = 'pending' | 'completed';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type TaskFocus =
+  | { kind: 'plan'; planId: string }
+  | { kind: 'unlinked' }
+  | null;
+
+function taskFocusFromHash(): TaskFocus {
+  const query = window.location.hash.split('?')[1];
+  if (!query) return null;
+  const params = new URLSearchParams(query);
+  const plans = params.getAll('plan');
+  const groups = params.getAll('group');
+  if (plans.length === 1 && groups.length === 0 && UUID_RE.test(plans[0])) {
+    return { kind: 'plan', planId: plans[0].toLowerCase() };
+  }
+  if (groups.length === 1 && plans.length === 0 && groups[0] === 'unlinked') {
+    return { kind: 'unlinked' };
+  }
+  return null;
+}
+
+function sameTaskFocus(left: TaskFocus, right: TaskFocus): boolean {
+  if (left === null || right === null) return left === right;
+  return left.kind === right.kind
+    && (left.kind !== 'plan' || (right.kind === 'plan' && left.planId === right.planId));
+}
+
+function groupTitle(group: UserTaskGroup): string {
+  return group.group_kind === 'unlinked'
+    ? 'Unlinked tasks'
+    : group.plan_title ?? group.plan_path ?? 'Plan';
+}
+
+function focusHash(group: UserTaskGroup): string {
+  return group.group_kind === 'plan' && group.plan_id
+    ? `/tasks?plan=${encodeURIComponent(group.plan_id)}`
+    : '/tasks?group=unlinked';
+}
 
 type RemoveTarget =
   | { label: string; count: 1; request: { mode: 'tasks'; task_ids: [string] } }
@@ -35,6 +74,15 @@ function tasksForTab(group: UserTaskGroup, tab: TaskTab): UserTaskRow[] {
   return group.tasks.filter((task) => tab === 'pending'
     ? task.status === 'pending'
     : task.status !== 'pending');
+}
+
+function matchesSearch(group: UserTaskGroup, task: UserTaskRow, query: string): boolean {
+  if (!query) return true;
+  const haystack = [group.plan_title, group.plan_path, group.plan_sha, task.title, task.instructions]
+    .filter((value): value is string => value !== null)
+    .join('\n')
+    .toLowerCase();
+  return haystack.includes(query);
 }
 
 function TaskChip({ children, tone }: { children: string; tone: 'blocking' | 'follow' | 'source' }) {
@@ -114,6 +162,7 @@ function TaskGroupCard({
   onDismiss,
   onRemove,
   onRemoveGroup,
+  onFocus,
 }: {
   group: UserTaskGroup;
   tasks: UserTaskRow[];
@@ -123,17 +172,29 @@ function TaskGroupCard({
   onDismiss: (task: UserTaskRow) => void;
   onRemove: (task: UserTaskRow) => void;
   onRemoveGroup: (group: UserTaskGroup, count: number) => void;
+  onFocus: (group: UserTaskGroup) => void;
 }) {
   const unlinked = group.group_kind === 'unlinked';
-  const title = unlinked ? 'Unlinked tasks' : group.plan_title ?? group.plan_path ?? 'Plan';
   return (
     <section data-testid="task-group" className="rounded-xl border border-deep-800 bg-deep-900 px-4 py-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-ink">{title}</h2>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-ink">{groupTitle(group)}</h2>
+            {group.plan_sha && (
+              <span title={group.plan_sha} className="font-mono text-[0.66rem] text-flow-300">
+                @ {group.plan_sha.slice(0, 8)}
+              </span>
+            )}
+          </div>
           {!unlinked && <p className="font-mono text-[0.66rem] text-ink-faint">{group.plan_path}</p>}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 font-mono text-[0.66rem] text-ink-faint">
+          <button type="button" onClick={() => onFocus(group)}
+            className="rounded-md border border-deep-700 px-2 py-1 text-xs text-flow-300 transition-colors hover:border-flow-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-flow-400"
+            aria-label={`Focus ${groupTitle(group)}`}>
+            Focus
+          </button>
           {group.plan_status && <TaskChip tone="source">{group.plan_status}</TaskChip>}
           <span>{tasks.length} {tab}</span>
           {tab === 'pending' && <span>{tasks.filter((task) => task.kind === 'blocking').length} blocking</span>}
@@ -155,11 +216,88 @@ function TaskGroupCard({
   );
 }
 
+function FocusedTaskGroup({
+  group,
+  busy,
+  onStatus,
+  onDismiss,
+  onRemove,
+  onRemoveGroup,
+}: {
+  group: UserTaskGroup;
+  busy: boolean;
+  onStatus: (task: UserTaskRow, action: 'complete' | 'reopen') => void;
+  onDismiss: (task: UserTaskRow) => void;
+  onRemove: (task: UserTaskRow) => void;
+  onRemoveGroup: (group: UserTaskGroup, count: number) => void;
+}) {
+  const outstanding = tasksForTab(group, 'pending');
+  const completed = tasksForTab(group, 'completed');
+  return (
+    <section data-testid="focused-task-group" className="rounded-xl border border-flow-400/30 bg-deep-900 px-4 py-4">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-base font-semibold text-ink">{groupTitle(group)}</h2>
+            {group.plan_sha && (
+              <span title={group.plan_sha} className="font-mono text-[0.66rem] text-flow-300">
+                @ {group.plan_sha.slice(0, 8)}
+              </span>
+            )}
+          </div>
+          {group.group_kind === 'plan' && (
+            <p className="font-mono text-[0.66rem] text-ink-faint">{group.plan_path}</p>
+          )}
+        </div>
+        {group.plan_status && <TaskChip tone="source">{group.plan_status}</TaskChip>}
+      </div>
+
+      <section aria-labelledby="outstanding-tasks-heading">
+        <h3 id="outstanding-tasks-heading" className="mb-2 text-sm font-semibold text-ink">
+          Outstanding ({outstanding.length})
+        </h3>
+        <div className="flex flex-col gap-2">
+          {outstanding.map((task) => (
+            <TaskCard key={task.id} task={task} busy={busy}
+              onStatus={onStatus} onDismiss={onDismiss} onRemove={onRemove} />
+          ))}
+          {outstanding.length === 0 && <p className="text-sm text-ink-faint">No outstanding tasks.</p>}
+        </div>
+      </section>
+
+      <section aria-labelledby="completed-tasks-heading" className="mt-5 border-t border-deep-800 pt-5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 id="completed-tasks-heading" className="text-sm font-semibold text-ink-dim">
+            Completed ({completed.length})
+          </h3>
+          {completed.length > 0 && group.removal_snapshot && (
+            <button type="button" disabled={busy} onClick={() => onRemoveGroup(group, completed.length)}
+              className="text-xs text-deny enabled:hover:underline disabled:opacity-40">
+              {group.group_kind === 'unlinked' ? 'Remove all unlinked tasks' : 'Remove all from this plan'}
+            </button>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 opacity-90">
+          {completed.map((task) => (
+            <TaskCard key={task.id} task={task} busy={busy}
+              onStatus={onStatus} onDismiss={onDismiss} onRemove={onRemove} />
+          ))}
+          {completed.length === 0 && <p className="text-sm text-ink-faint">No completed tasks.</p>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
   const { project } = useProjects();
   const projectRef = useRef(project);
   projectRef.current = project;
   const requestGeneration = useRef(0);
+  const previousProjectRef = useRef(project);
+  const projectGeneration = useRef(0);
+  const mountedRef = useRef(false);
+  const reloadRef = useRef<(afterMutation?: boolean, preserveSnapshot?: boolean) => void>(() => {});
   const tabRefs = useRef<Record<TaskTab, HTMLButtonElement | null>>({ pending: null, completed: null });
   const removeDialogRef = useRef<HTMLDivElement | null>(null);
   const removeCancelRef = useRef<HTMLButtonElement | null>(null);
@@ -179,7 +317,23 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
   const [dismissReason, setDismissReason] = useState('');
   const [dismissError, setDismissError] = useState('');
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
+  const [focus, setFocus] = useState(taskFocusFromHash);
+  const [search, setSearch] = useState('');
   busyMutationRef.current = busyMutation;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    const update = () => {
+      const nextFocus = taskFocusFromHash();
+      setFocus((currentFocus) => sameTaskFocus(currentFocus, nextFocus) ? currentFocus : nextFocus);
+    };
+    window.addEventListener('hashchange', update);
+    return () => window.removeEventListener('hashchange', update);
+  }, []);
 
   useEffect(() => {
     if (!removeTarget) return;
@@ -233,7 +387,10 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
       setData(null);
       setDataProject(null);
     }
-    apiGet<UserTaskListResponse>('/user-tasks', { history: 1 })
+    apiGet<UserTaskListResponse>('/user-tasks', {
+      history: 1,
+      ...(focus?.kind === 'plan' ? { plan: focus.planId } : {}),
+    })
       .then((response) => {
         if (requestGeneration.current !== generation || projectRef.current !== requestProject) return;
         setData(response);
@@ -248,17 +405,28 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
       .finally(() => {
         if (requestGeneration.current === generation && projectRef.current === requestProject) setLoading(false);
       });
-  }, [project]);
+  }, [focus, project]);
+
+  reloadRef.current = reload;
 
   useEffect(() => {
-    setTab('pending');
+    const projectChanged = previousProjectRef.current !== project;
+    previousProjectRef.current = project;
+    if (projectChanged) {
+      projectGeneration.current += 1;
+      setTab('pending');
+      setBusyMutation(null);
+      if (focus !== null) {
+        window.location.hash = '/tasks';
+        return () => { requestGeneration.current += 1; };
+      }
+    }
     setMutationError('');
-    setBusyMutation(null);
     setDismissTask(null);
     setRemoveTarget(null);
     reload();
     return () => { requestGeneration.current += 1; };
-  }, [reload]);
+  }, [focus, project, reload]);
 
   const changeStatus = useCallback(async (
     task: UserTaskRow,
@@ -267,7 +435,7 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
   ) => {
     if (busyMutation) return;
     const requestProject = project;
-    const generation = requestGeneration.current;
+    const generation = projectGeneration.current;
     if (!requestProject || dataProject !== requestProject) return;
     setBusyMutation(`status:${task.id}`);
     setMutationError('');
@@ -277,17 +445,17 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
         action,
         ...(reason === undefined ? {} : { reason }),
       });
-      if (requestGeneration.current !== generation || projectRef.current !== requestProject) return;
+      if (!mountedRef.current || projectGeneration.current !== generation || projectRef.current !== requestProject) return;
       setBusyMutation(null);
       onTasksChanged();
-      reload(true);
+      reloadRef.current(true);
     } catch (cause) {
-      if (requestGeneration.current === generation && projectRef.current === requestProject) {
+      if (mountedRef.current && projectGeneration.current === generation && projectRef.current === requestProject) {
         setMutationError(cause instanceof Error ? cause.message : String(cause));
         setBusyMutation(null);
       }
     }
-  }, [busyMutation, dataProject, onTasksChanged, project, reload]);
+  }, [busyMutation, dataProject, onTasksChanged, project]);
 
   const openDismiss = useCallback((task: UserTaskRow) => {
     setDismissTask(task);
@@ -327,9 +495,7 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
       ? document.activeElement
       : null;
     setRemoveTarget({
-      label: group.group_kind === 'unlinked'
-        ? 'Unlinked tasks'
-        : group.plan_title ?? group.plan_path ?? 'Plan',
+      label: groupTitle(group),
       count,
       request: { mode: 'group', group_key: group.group_key, snapshot: group.removal_snapshot },
     });
@@ -340,32 +506,41 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
     if (!removeTarget || busyMutation) return;
     const target = removeTarget;
     const requestProject = project;
-    const generation = requestGeneration.current;
+    const generation = projectGeneration.current;
     if (!requestProject || dataProject !== requestProject) return;
     setBusyMutation(`remove:${target.label}`);
     setMutationError('');
     try {
       await apiPost<UserTaskRemoveResponse>('/user-tasks/remove', { ...target.request });
-      if (requestGeneration.current !== generation || projectRef.current !== requestProject) return;
+      if (!mountedRef.current || projectGeneration.current !== generation || projectRef.current !== requestProject) return;
       setBusyMutation(null);
       removeSucceededRef.current = true;
       setRemoveTarget(null);
-      reload(true);
+      reloadRef.current(true);
     } catch (cause) {
-      if (requestGeneration.current !== generation || projectRef.current !== requestProject) return;
+      if (!mountedRef.current || projectGeneration.current !== generation || projectRef.current !== requestProject) return;
       setMutationError(cause instanceof Error ? cause.message : String(cause));
       setBusyMutation(null);
       setRemoveTarget(null);
-      if (cause instanceof ApiError && cause.status === 409) reload(false, true);
+      if (cause instanceof ApiError && cause.status === 409) reloadRef.current(false, true);
     }
   };
 
   const scopedData = dataProject === project ? data : null;
+  const normalizedSearch = search.trim().toLowerCase();
   const historyCount = scopedData?.rows.filter((task) => task.status !== 'pending').length ?? 0;
   const selectedGroups = scopedData?.groups
-    .map((group) => ({ group, tasks: tasksForTab(group, tab) }))
+    .map((group) => ({
+      group,
+      tasks: tasksForTab(group, tab).filter((task) => matchesSearch(group, task, normalizedSearch)),
+    }))
     .filter(({ tasks }) => tasks.length > 0) ?? [];
   const empty = scopedData !== null && scopedData.rows.length === 0;
+  const focusedGroup = focus === null || scopedData === null
+    ? null
+    : scopedData.groups.find((group) => focus.kind === 'plan'
+      ? group.group_key === `plan:${focus.planId}`
+      : group.group_key === 'unlinked') ?? null;
 
   const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: TaskTab) => {
     const keys: TaskTab[] = ['pending', 'completed'];
@@ -385,7 +560,25 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
       className="mx-auto max-w-4xl px-8 py-8">
       <ViewHeader title="My Tasks" subtitle="operator-owned work that persists across agent sessions" />
 
-      {scopedData && (
+      {focus !== null && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-flow-400/30 bg-flow-400/10 px-3 py-2 text-xs text-flow-300">
+          <span>Focused on one task group.</span>
+          <button type="button" className="underline" onClick={() => { window.location.hash = '/tasks'; }}>
+            Back to all tasks
+          </button>
+        </div>
+      )}
+
+      {focus === null && (
+        <label className="mb-4 block text-xs text-ink-dim">
+          Search tasks and plans
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)}
+            placeholder="Plan name, SHA, task title, or instructions"
+            className="mt-1 block w-full rounded-lg border border-deep-700 bg-deep-900 px-3 py-2 text-sm text-ink" />
+        </label>
+      )}
+
+      {focus === null && scopedData && (
         <div className="mb-5 grid grid-cols-3 gap-3" aria-label="Task totals">
           {[
             ['Pending', scopedData.pending_count],
@@ -409,9 +602,22 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
         </div>
       )}
       {mutationError && <p className="mb-3 text-sm text-deny" role="alert">{mutationError}</p>}
-      {!loading && !error && empty && <p className="text-sm text-ink-faint">No operator tasks for this project.</p>}
+      {!loading && !error && focus === null && empty && (
+        <p className="text-sm text-ink-faint">No operator tasks for this project.</p>
+      )}
+      {!loading && !error && focus !== null && focusedGroup === null && (
+        <p className="text-sm text-ink-faint">
+          {focus.kind === 'plan' ? 'No visible tasks for this plan.' : 'No visible unlinked tasks.'}
+        </p>
+      )}
 
-      {scopedData && !empty && (
+      {scopedData && focus !== null && focusedGroup && (
+        <FocusedTaskGroup group={focusedGroup} busy={busyMutation !== null}
+          onStatus={(task, action) => { void changeStatus(task, action); }}
+          onDismiss={openDismiss} onRemove={openTaskRemoval} onRemoveGroup={openGroupRemoval} />
+      )}
+
+      {scopedData && focus === null && !empty && (
         <>
           <div role="tablist" aria-label="Task status" className="mb-4 flex gap-2">
             {([
@@ -433,11 +639,14 @@ export function MyTasks({ onTasksChanged }: { onTasksChanged: () => void }) {
               <TaskGroupCard key={group.group_key} group={group} tasks={tasks} tab={tab}
                 busy={busyMutation !== null}
                 onStatus={(task, action) => { void changeStatus(task, action); }}
-                onDismiss={openDismiss} onRemove={openTaskRemoval} onRemoveGroup={openGroupRemoval} />
+                onDismiss={openDismiss} onRemove={openTaskRemoval} onRemoveGroup={openGroupRemoval}
+                onFocus={(groupToFocus) => { window.location.hash = focusHash(groupToFocus); }} />
             ))}
             {selectedGroups.length === 0 && (
               <p className="text-sm text-ink-faint">
-                {tab === 'pending'
+                {normalizedSearch
+                  ? 'No tasks match this search.'
+                  : tab === 'pending'
                   ? 'No pending operator tasks for this project.'
                   : 'No completed operator tasks for this project.'}
               </p>

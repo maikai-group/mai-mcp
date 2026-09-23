@@ -11,6 +11,7 @@ import { MAI_ROOT } from '../paths.js';
 import { PRE_FILE_LLM_AUTHORITY } from '../env.js';
 import { claudeBinaryAvailable } from '../llm/claude-code.js';
 import { codexBinaryAvailable } from '../llm/codex-cli.js';
+import { routingSnapshot, credentialConfigured } from '../providers/runtime.js';
 import { detectLLMProviderId } from '../llm/provider.js';
 import type { PreFileLlmAuthority } from './init.js';
 
@@ -279,7 +280,7 @@ export async function maybeOfferLocalEmbeddings(
 ): Promise<string | null> {
   const env = await readEnvFile(envFile);
   const configured =
-    process.env.MAI_EMBEDDINGS !== undefined || /^MAI_EMBEDDINGS=/m.test(env);
+    process.env.MAI_EMBEDDINGS !== undefined || /^MAI_EMBEDDINGS=/m.test(env) || routingSnapshot().brain !== null;
   // Mirror detectProvider()'s TRUTHINESS test, not `!== undefined` (pass-7 B4).
   // `OPENAI_API_KEY=` in a .env — how people usually disable a key — is defined
   // but falsy: detectProvider() skips it and picks local, while the old check
@@ -287,7 +288,11 @@ export async function maybeOfferLocalEmbeddings(
   // ends up on a tier they were never offered, and `--embeddings local` told
   // them a cloud tier had won. Same normalisation both sides.
   const { hasCloudKey } = await import('../embeddings.js');
-  const cloudKey = hasCloudKey(process.env.OPENAI_API_KEY) || hasCloudKey(process.env.VOYAGE_API_KEY);
+  const savedBrain=routingSnapshot().brain;
+  const environmentSelects=process.env.OPENAI_API_KEY!==undefined||process.env.VOYAGE_API_KEY!==undefined;
+  const cloudKey=environmentSelects
+    ? hasCloudKey(process.env.OPENAI_API_KEY)||hasCloudKey(process.env.VOYAGE_API_KEY)
+    : Boolean(savedBrain?.enabled&&(savedBrain.provider==='openai'||savedBrain.provider==='voyage')&&credentialConfigured(savedBrain.provider));
   const prompted = new RegExp(`^${EMB_PROMPT_MARKER}=`, 'm').test(env);
 
   if (explicit === 'none') {
@@ -295,6 +300,12 @@ export async function maybeOfferLocalEmbeddings(
     return 'embeddings: skipped (--embeddings none)';
   }
   if (explicit === 'local') {
+    if (!environmentSelects && savedBrain && savedBrain.provider !== 'local') {
+      return 'embeddings: saved cloud routing is selected — change brain embeddings in Providers & Connections before selecting local';
+    }
+    if (process.env.MAI_EMBEDDINGS === undefined && !/^MAI_EMBEDDINGS=/m.test(env) && savedBrain?.enabled === false) {
+      return 'embeddings: disabled in Providers & Connections — enable brain embeddings there before downloading the local model';
+    }
     // Explicit request NEVER fails silently (review W3 — the plan-13 pass-2 W6
     // precedent). Ordered BEFORE the configured/cloudKey silent return, which
     // previously swallowed a scripted --embeddings local without a word.

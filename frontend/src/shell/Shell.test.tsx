@@ -21,6 +21,7 @@ vi.mock('../views/sessions/Sessions', () => ({ Sessions: () => <div>Sessions</di
 vi.mock('../views/topics/Topics', () => ({ Topics: () => <div>Topics</div> }));
 vi.mock('../views/roadmap/Roadmap', () => ({ Roadmap: () => <div>Roadmap</div> }));
 vi.mock('../views/sharing/Sharing', () => ({ Sharing: () => <div>Sharing</div> }));
+vi.mock('../views/settings/Providers', () => ({ Providers: () => <div>Providers & Connections</div> }));
 vi.mock('../views/profile/Profile', () => ({ Profile: () => <div>Profile</div> }));
 vi.mock('../views/tasks/MyTasks', () => ({
   MyTasks: ({ onTasksChanged }: { onTasksChanged: () => void }) => (
@@ -69,6 +70,13 @@ describe('Shell task badge', () => {
     expect(userTaskCalls().every(([, params]) => params?.summary === 1)).toBe(true);
   });
 
+  it('routes task hashes with a plan query to My Tasks', async () => {
+    window.location.hash = '/tasks?plan=11111111-1111-4111-8111-111111111111';
+    render(<Shell />);
+    expect(await screen.findByRole('button', { name: 'Trigger task refresh' })).toBeDefined();
+    expect(window.location.hash).toContain('?plan=11111111-1111-4111-8111-111111111111');
+  });
+
   it('polls the task summary every 60 seconds', async () => {
     vi.useFakeTimers();
     render(<Shell />);
@@ -114,4 +122,10 @@ describe('Shell task badge', () => {
     await Promise.resolve();
     expect(screen.getByTestId('tasks-badge')).toHaveProperty('textContent', '4');
   });
+});
+
+it('opens Providers & Connections from Settings and retains the project',async()=>{
+  projectState.current='project-a';mocks.apiGet.mockResolvedValue({rows:[],pending_count:0});window.location.hash='/home';render(<Shell/>);
+  fireEvent.click(screen.getByRole('button',{name:'Settings'}));
+  expect(await screen.findByText('Providers & Connections')).toBeDefined();expect(window.location.hash).toBe('#/settings');expect(projectState.current).toBe('project-a');cleanup();
 });

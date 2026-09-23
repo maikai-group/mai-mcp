@@ -2,12 +2,14 @@
  * Plan 19: one maybeOfferSubscriptionProvider covers claude-code AND codex-cli;
  * the codex fixture defaults to LOGGED OUT here so every pre-existing cc-solo
  * case keeps its exact meaning on machines with a real codex install. */
-import { beforeAll, afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installFakeToolFromFile } from './support/fake-tool.js';
+
+vi.mock('../providers/runtime.js', () => import('./support/provider-runtime-mock.js'));
 
 const ccSrc = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cc-bin');
 const codexSrc = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'codex-bin');
@@ -48,8 +50,13 @@ afterAll(() => {
   }
   fs.rmSync(ccBin, { recursive: true, force: true });
   fs.rmSync(codexBin, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 beforeEach(async () => {
+  vi.resetModules();
+  delete process.env.MAI_LLM_SUMMARY;
+  delete process.env.MAI_LLM_PROVIDER;
+  await import('../scripts/llm-consent.js');
   envFile = path.join(tmp, `env-${n++}`);
   delete process.env.MAI_LLM_PROVIDER;
   process.env.MAI_LLM_SUMMARY = '0'; // set-don't-delete: keeps detectLLMProviderId() null (N2 check) regardless of real .env
@@ -115,7 +122,7 @@ describe('maybeOfferSubscriptionProvider — claude-code solo (codex logged out)
   });
   it('--llm claude-code → enables without prompting', async () => {
     const { maybeOfferSubscriptionProvider } = await import('../scripts/llm-consent.js');
-    const line = await maybeOfferSubscriptionProvider(io([], false).io, 'claude-code', envFile);
+    const line = await maybeOfferSubscriptionProvider(io([], false).io, 'claude-code', envFile, { preFileLlmAuthority: {} });
     expect(line).toContain('enabled');
   });
   it('--llm none → markers for BOTH providers, no enable', async () => {
@@ -135,7 +142,7 @@ describe('maybeOfferSubscriptionProvider — claude-code solo (codex logged out)
   });
   it('a RESOLVING provider counts as configured — never prompts a working API-key setup (review N2)', async () => {
     process.env.MAI_LLM_SUMMARY = '1';
-    process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? 'sk-test-fake';
+    process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'sk-test-fake';
     // no MAI_LLM_PROVIDER → default 'anthropic' resolves via the key
     const { maybeOfferSubscriptionProvider } = await import('../scripts/llm-consent.js');
     expect(await maybeOfferSubscriptionProvider(io(['y']).io, undefined, envFile)).toBeNull();
@@ -254,7 +261,7 @@ describe('maybeOfferSubscriptionProvider — codex-cli solo (no claude on PATH)'
   });
   it('--llm codex-cli → enables without prompting', async () => {
     const { maybeOfferSubscriptionProvider } = await import('../scripts/llm-consent.js');
-    const line = await maybeOfferSubscriptionProvider(io([], false).io, 'codex-cli', envFile);
+    const line = await maybeOfferSubscriptionProvider(io([], false).io, 'codex-cli', envFile, { preFileLlmAuthority: {} });
     expect(line).toContain('enabled');
     expect(fs.readFileSync(envFile, 'utf8')).toContain('MAI_LLM_PROVIDER=codex-cli');
   });

@@ -9,6 +9,10 @@ import { SemanticError } from './graph/semantic/validation.js';
 // unaffected; this surface is operator-facing only.
 
 import "./env.js";
+import { createProviderHandler, withProviderRoutes } from './providers/http.js';
+import { ProviderStore } from './providers/store.js';
+import { credentialConfigured, credentialRevision, resolveCredential, resolveJevConfig, routingSnapshot } from './providers/runtime.js';
+import { maiStateRoot } from './platform/paths.js';
 import http from "node:http";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
@@ -526,7 +530,7 @@ const POST_HANDLERS: Record<string, PostHandler> = {
 
 // ---------- Request dispatch ----------
 
-async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+async function handleGenericRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   // Token check — skipped when binding to 127.0.0.1
   if (requireToken && req.headers["x-mai-brain-token"] !== token) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
@@ -636,6 +640,12 @@ async function serveStatic(pathname: string, res: http.ServerResponse): Promise<
 }
 
 // ---------- Server ----------
+
+const providerRoot = maiStateRoot();
+const providerStore = new ProviderStore(providerRoot);
+const providerRuntime = {credentialConfigured,credentialRevision,resolveCredential,resolveJevConfig,routingSnapshot};
+const handleRequest = withProviderRoutes(createProviderHandler({store:providerStore,runtime:providerRuntime,
+  resolveProject:resolveProjectId,bind,port:()=>port,token:()=>token}),handleGenericRequest);
 
 const server = http.createServer((req, res) => {
   handleRequest(req, res).catch((err) => {

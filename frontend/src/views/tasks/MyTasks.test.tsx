@@ -28,6 +28,8 @@ vi.mock('../../shell/project', () => ({
 
 import { MyTasks } from './MyTasks';
 
+const PLAN_ID = '11111111-1111-4111-8111-111111111111';
+
 function deferred<T>() {
   let resolve = (_value: T): void => { throw new Error('deferred not initialized'); };
   let reject = (_reason: unknown): void => { throw new Error('deferred not initialized'); };
@@ -38,7 +40,7 @@ function deferred<T>() {
 function task(overrides: Partial<UserTaskRow> & Pick<UserTaskRow, 'id' | 'title'>): UserTaskRow {
   return {
     project_id: 'project-a-id',
-    plan_id: 'plan-a',
+    plan_id: PLAN_ID,
     task_key: overrides.id,
     source_kind: 'plan',
     kind: 'blocking',
@@ -54,6 +56,7 @@ function task(overrides: Partial<UserTaskRow> & Pick<UserTaskRow, 'id' | 'title'
     plan_title: 'Zeta Plan',
     plan_path: 'docs/zeta.md',
     plan_status: 'executing',
+    plan_sha: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
     plan_updated_at: '2026-08-27T12:00:00.000Z',
     ...overrides,
   };
@@ -73,35 +76,36 @@ const dismissed = task({
 });
 const adHocA = task({
   id: 'ad-hoc-a', title: 'Agent A task', plan_id: null, source_kind: 'ad_hoc',
-  assigned_by_agent: 'agent-c', plan_title: null, plan_path: null, plan_status: null,
-  plan_updated_at: null,
+  assigned_by_agent: 'agent-c', plan_title: null, plan_path: null, plan_status: null, plan_sha: null,
+  plan_updated_at: null, instructions: 'Review the unlinked item.',
 });
 const adHocB = task({
   id: 'ad-hoc-b', title: 'Agent B task', plan_id: null, source_kind: 'ad_hoc',
-  assigned_by_agent: 'agent-d', plan_title: null, plan_path: null, plan_status: null,
+  assigned_by_agent: 'agent-d', plan_title: null, plan_path: null, plan_status: null, plan_sha: null,
   plan_updated_at: null, sort_order: 1,
 });
 const adHocCompleted = task({
   id: 'ad-hoc-completed', title: 'Unlinked completed', plan_id: null, source_kind: 'ad_hoc',
-  assigned_by_agent: 'agent-e', plan_title: null, plan_path: null, plan_status: null,
+  assigned_by_agent: 'agent-e', plan_title: null, plan_path: null, plan_status: null, plan_sha: null,
   plan_updated_at: null, status: 'completed', resolved_at: '2026-08-27T13:30:00.000Z', sort_order: 2,
 });
 
 const defaultRows = [planFirst, planSecond, completed, dismissed, adHocA, adHocB, adHocCompleted];
 
 function response(rows: UserTaskRow[] = defaultRows): UserTaskListResponse {
-  const planTasks = rows.filter((row) => row.plan_id === 'plan-a');
+  const planTasks = rows.filter((row) => row.plan_id === PLAN_ID);
   const unlinkedTasks = rows.filter((row) => row.plan_id === null);
   const pending = rows.filter((row) => row.status === 'pending');
   const groups = [];
   if (planTasks.length > 0) {
     groups.push({
-      group_key: 'plan:plan-a' as const,
+      group_key: `plan:${PLAN_ID}` as const,
       group_kind: 'plan' as const,
-      plan_id: 'plan-a',
+      plan_id: PLAN_ID,
       plan_title: 'Zeta Plan',
       plan_path: 'docs/zeta.md',
       plan_status: 'executing',
+      plan_sha: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
       pending_count: planTasks.filter((row) => row.status === 'pending').length,
       blocking_count: planTasks.filter((row) => row.status === 'pending' && row.kind === 'blocking').length,
       follow_up_count: planTasks.filter((row) => row.status === 'pending' && row.kind === 'follow_up').length,
@@ -117,6 +121,7 @@ function response(rows: UserTaskRow[] = defaultRows): UserTaskListResponse {
       plan_title: null,
       plan_path: null,
       plan_status: null,
+      plan_sha: null,
       pending_count: unlinkedTasks.filter((row) => row.status === 'pending').length,
       blocking_count: unlinkedTasks.filter((row) => row.status === 'pending' && row.kind === 'blocking').length,
       follow_up_count: unlinkedTasks.filter((row) => row.status === 'pending' && row.kind === 'follow_up').length,
@@ -145,6 +150,7 @@ describe('MyTasks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     projectState.current = 'project-a';
+    window.location.hash = '/tasks';
     mocks.apiGet.mockResolvedValue(response());
     mocks.apiPost.mockImplementation((path: string, body: Record<string, unknown>) => {
       if (path === '/user-tasks/remove') return Promise.resolve({ removed_count: 1 });
@@ -177,6 +183,8 @@ describe('MyTasks', () => {
     expect(pendingTab.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tab', { name: 'Completed (3)' }).getAttribute('aria-selected')).toBe('false');
     expect(screen.getByRole('heading', { name: 'Zeta Plan' })).toBeDefined();
+    expect(screen.getByTitle('abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'))
+      .toHaveProperty('textContent', '@ abcdef01');
     const unlinked = screen.getByRole('heading', { name: 'Unlinked tasks' }).closest('[data-testid="task-group"]');
     if (!(unlinked instanceof HTMLElement)) throw new Error('unlinked group missing');
     expect(within(unlinked).getByText('Assigned by agent-c')).toBeDefined();
@@ -187,6 +195,53 @@ describe('MyTasks', () => {
     expect(screen.getByRole('heading', { name: 'Literal body' }).closest('[data-testid="task-row"]')?.textContent)
       .toContain('<img src=x onerror="alert(1)">\n**plain**');
     expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('searches plan identity and task content without changing the server totals', async () => {
+    render(<MyTasks onTasksChanged={() => {}} />);
+    await screen.findByRole('tab', { name: 'Pending (4)' });
+    const search = screen.getByRole('searchbox', { name: 'Search tasks and plans' });
+
+    fireEvent.change(search, { target: { value: 'abcdef01' } });
+    expect(screen.getByText('Zulu first')).toBeDefined();
+    expect(screen.queryByText('Agent A task')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Pending (4)' })).toBeDefined();
+
+    fireEvent.change(search, { target: { value: 'zeta plan' } });
+    expect(screen.getByText('Zulu first')).toBeDefined();
+    expect(screen.queryByText('Agent A task')).toBeNull();
+
+    fireEvent.change(search, { target: { value: 'docs/zeta.md' } });
+    expect(screen.getByText('Alpha second')).toBeDefined();
+    expect(screen.queryByText('Agent B task')).toBeNull();
+
+    fireEvent.change(search, { target: { value: 'agent a task' } });
+    expect(screen.getByText('Agent A task')).toBeDefined();
+    expect(screen.queryByText('Zulu first')).toBeNull();
+
+    fireEvent.change(search, { target: { value: 'agent b task instructions' } });
+    expect(screen.getByText('Agent B task')).toBeDefined();
+    expect(screen.queryByText('Zulu first')).toBeNull();
+
+    fireEvent.change(search, { target: { value: 'missing value' } });
+    expect(screen.getByText('No tasks match this search.')).toBeDefined();
+  });
+
+  it('opens an exact plan focus link and can return to all tasks', async () => {
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
+    render(<MyTasks onTasksChanged={() => {}} />);
+
+    expect(await screen.findByText('Focused on one task group.')).toBeDefined();
+    expect(mocks.apiGet).toHaveBeenCalledWith('/user-tasks', { history: 1, plan: PLAN_ID });
+    expect(screen.getByRole('heading', { name: 'Outstanding (2)' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Completed (2)' })).toBeDefined();
+    expect(screen.getByText('Zulu first')).toBeDefined();
+    expect(screen.getByText('Completed task')).toBeDefined();
+    expect(screen.queryByText('Agent A task')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to all tasks' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks'));
+    await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledWith('/user-tasks', { history: 1 }));
   });
 
   it('shows completed and dismissed rows in their plan/unlinked cards with checked controls', async () => {
@@ -327,7 +382,7 @@ describe('MyTasks', () => {
     expect(screen.getByText('101 tasks')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
     expect(mocks.apiPost).toHaveBeenCalledWith('/user-tasks/remove', {
-      mode: 'group', group_key: 'plan:plan-a', snapshot: 'a'.repeat(64),
+      mode: 'group', group_key: `plan:${PLAN_ID}`, snapshot: 'a'.repeat(64),
     });
     expect(mocks.apiPost.mock.calls[0][1]).not.toHaveProperty('task_ids');
   });
@@ -431,14 +486,197 @@ describe('MyTasks', () => {
     expect(mocks.apiPost).toHaveBeenCalledTimes(1);
   });
 
+  it('focuses a linked card, shows both sections, and preserves search and tab on Back', async () => {
+    render(<MyTasks onTasksChanged={() => {}} />);
+    await screen.findByRole('tab', { name: 'Pending (4)' });
+    const search = screen.getByRole('searchbox', { name: 'Search tasks and plans' });
+    fireEvent.change(search, { target: { value: 'Zulu first' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus Zeta Plan' }));
+    await waitFor(() => expect(window.location.hash).toBe(`#/tasks?plan=${PLAN_ID}`));
+    await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledWith('/user-tasks', {
+      history: 1,
+      plan: PLAN_ID,
+    }));
+
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByLabelText('Task totals')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Outstanding (2)' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Completed (2)' })).toBeDefined();
+    expect(screen.getByText('Zulu first')).toBeDefined();
+    expect(screen.getByText('Alpha second')).toBeDefined();
+    expect(screen.getByText('Completed task')).toBeDefined();
+    expect(screen.getByText('Dismissed task')).toBeDefined();
+    expect(screen.queryByText('Agent A task')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to all tasks' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks'));
+    const pendingTab = await screen.findByRole('tab', { name: 'Pending (4)' });
+    expect(pendingTab.getAttribute('aria-selected')).toBe('true');
+    const restoredSearch = screen.getByRole('searchbox', { name: 'Search tasks and plans' });
+    expect(restoredSearch).toHaveProperty('value', 'Zulu first');
+
+    fireEvent.change(restoredSearch, { target: { value: '' } });
+    selectCompleted();
+    fireEvent.click(screen.getByRole('button', { name: 'Focus Zeta Plan' }));
+    await waitFor(() => expect(window.location.hash).toBe(`#/tasks?plan=${PLAN_ID}`));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to all tasks' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks'));
+    const completedTab = await screen.findByRole('tab', { name: 'Completed (3)' });
+    expect(completedTab.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('focuses all visible Unlinked work without adding a plan filter', async () => {
+    render(<MyTasks onTasksChanged={() => {}} />);
+    await screen.findByRole('tab', { name: 'Pending (4)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Focus Unlinked tasks' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks?group=unlinked'));
+    await waitFor(() => expect(mocks.apiGet).toHaveBeenLastCalledWith('/user-tasks', { history: 1 }));
+    expect(screen.getByRole('heading', { name: 'Outstanding (2)' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Completed (1)' })).toBeDefined();
+    expect(screen.getByText('Agent A task')).toBeDefined();
+    expect(screen.getByText('Agent B task')).toBeDefined();
+    expect(screen.getByText('Unlinked completed')).toBeDefined();
+    expect(screen.queryByText('Zulu first')).toBeNull();
+  });
+
+  it('keeps plan focus while authoritative completion and reopen move a task', async () => {
+    const movedRows = defaultRows.map((row) => row.id === 'plan-first'
+      ? { ...row, status: 'completed' as const, resolved_at: '2026-08-27T14:00:00.000Z' }
+      : row);
+    mocks.apiGet.mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response(movedRows))
+      .mockResolvedValueOnce(response());
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
+    render(<MyTasks onTasksChanged={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Zulu first' }));
+    expect(await screen.findByRole('checkbox', { name: 'Reopen Zulu first' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Outstanding (1)' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Completed (3)' })).toBeDefined();
+    expect(window.location.hash).toBe(`#/tasks?plan=${PLAN_ID}`);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen Zulu first' }));
+    expect(await screen.findByRole('checkbox', { name: 'Complete Zulu first' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Outstanding (2)' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Completed (2)' })).toBeDefined();
+    expect(window.location.hash).toBe(`#/tasks?plan=${PLAN_ID}`);
+  });
+
+  it('dismisses a task while retaining plan focus', async () => {
+    const dismissedRows = defaultRows.map((row) => row.id === 'plan-second'
+      ? {
+          ...row,
+          status: 'dismissed' as const,
+          resolution_note: 'not required',
+          resolved_at: '2026-08-27T14:00:00.000Z',
+        }
+      : row);
+    mocks.apiGet.mockResolvedValueOnce(response()).mockResolvedValueOnce(response(dismissedRows));
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
+    render(<MyTasks onTasksChanged={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss Alpha second' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Reason' }), { target: { value: 'not required' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm dismiss' }));
+    expect(await screen.findByRole('checkbox', { name: 'Reopen Alpha second' })).toBeDefined();
+    expect(screen.getByText('reason: not required')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Outstanding (1)' })).toBeDefined();
+    expect(window.location.hash).toBe(`#/tasks?plan=${PLAN_ID}`);
+  });
+
+  it('removes the last plan task while retaining an actionable empty focus', async () => {
+    mocks.apiGet.mockResolvedValueOnce(response([completed])).mockResolvedValueOnce(response([]));
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
+    render(<MyTasks onTasksChanged={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Completed task' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    expect(await screen.findByText('No visible tasks for this plan.')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Back to all tasks' })).toBeDefined();
+    expect(window.location.hash).toBe(`#/tasks?plan=${PLAN_ID}`);
+  });
+
+  it('removes the last Unlinked group while retaining its actionable empty focus', async () => {
+    mocks.apiGet.mockResolvedValueOnce(response([adHocCompleted])).mockResolvedValueOnce(response([]));
+    window.location.hash = '/tasks?group=unlinked';
+    render(<MyTasks onTasksChanged={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove all unlinked tasks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await waitFor(() => expect(mocks.apiPost).toHaveBeenCalledWith('/user-tasks/remove', {
+      mode: 'group', group_key: 'unlinked', snapshot: 'b'.repeat(64),
+    }));
+    expect(await screen.findByText('No visible unlinked tasks.')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Back to all tasks' })).toBeDefined();
+    expect(window.location.hash).toBe('#/tasks?group=unlinked');
+  });
+
+  it('keeps the mutation lock and reconciles the current view across focus navigation', async () => {
+    const pendingMutation = deferred<UserTaskMutationResponse>();
+    const movedRows = defaultRows.map((row) => row.id === 'plan-first'
+      ? { ...row, status: 'completed' as const, resolved_at: '2026-08-27T14:00:00.000Z' }
+      : row);
+    mocks.apiPost.mockReturnValueOnce(pendingMutation.promise);
+    mocks.apiGet.mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response(movedRows));
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
+    render(<MyTasks onTasksChanged={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Zulu first' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to all tasks' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks'));
+    const secondMutation = await screen.findByRole('checkbox', { name: 'Complete Alpha second' });
+    expect(secondMutation).toHaveProperty('disabled', true);
+    fireEvent.click(secondMutation);
+    expect(mocks.apiPost).toHaveBeenCalledTimes(1);
+
+    pendingMutation.resolve(mutation({ ...planFirst, status: 'completed' }));
+    await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(
+      screen.getByRole('checkbox', { name: 'Complete Alpha second' })
+    ).toHaveProperty('disabled', false));
+    selectCompleted();
+    expect(await screen.findByRole('checkbox', { name: 'Reopen Zulu first' })).toBeDefined();
+  });
+
+  it('ignores a deferred mutation response after the component unmounts', async () => {
+    const pendingMutation = deferred<UserTaskMutationResponse>();
+    const onTasksChanged = vi.fn();
+    mocks.apiPost.mockReturnValueOnce(pendingMutation.promise);
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
+    const view = render(<MyTasks onTasksChanged={onTasksChanged} />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Zulu first' }));
+    view.unmount();
+    pendingMutation.resolve(mutation({ ...planFirst, status: 'completed' }));
+    await pendingMutation.promise;
+
+    expect(onTasksChanged).not.toHaveBeenCalled();
+    expect(mocks.apiGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed or conflicting focus params', async () => {
+    window.location.hash = '/tasks?plan=not-a-uuid&group=unlinked';
+    render(<MyTasks onTasksChanged={() => {}} />);
+    expect(await screen.findByRole('tab', { name: 'Pending (4)' })).toBeDefined();
+    expect(mocks.apiGet).toHaveBeenCalledWith('/user-tasks', { history: 1 });
+  });
+
   it('ignores late previous-project page, status, and removal responses', async () => {
     const pageA = deferred<UserTaskListResponse>();
     const pageB = deferred<UserTaskListResponse>();
     mocks.apiGet.mockImplementation(() => projectState.current === 'project-a' ? pageA.promise : pageB.promise);
     const changed = vi.fn();
+    window.location.hash = `/tasks?plan=${PLAN_ID}`;
     const { rerender, unmount } = render(<MyTasks onTasksChanged={changed} />);
     projectState.current = 'project-b';
     rerender(<MyTasks onTasksChanged={changed} />);
+    await waitFor(() => expect(window.location.hash).toBe('#/tasks'));
+    await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledWith('/user-tasks', { history: 1 }));
     pageB.resolve(response([task({ id: 'b-task', title: 'Project B task', project_id: 'project-b-id' })]));
     expect(await screen.findByText('Project B task')).toBeDefined();
     pageA.resolve(response([task({ id: 'a-stale', title: 'Project A stale task' })]));

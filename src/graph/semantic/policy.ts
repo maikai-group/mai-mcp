@@ -1,3 +1,4 @@
+import { credentialConfigured } from '../../providers/runtime.js';
 import { getPool } from '../../db.js';
 import { object, integer, SemanticError } from './validation.js';
 import type { CodePolicy, CodeProvider } from './types.js';
@@ -30,9 +31,8 @@ export async function readPolicy(projectId: string): Promise<CodePolicy> {
   const rows = await getPool().query('SELECT provider,revision,consent_version FROM graph_code_policy WHERE project_id=$1', [projectId]);
   return rows.rows.length ? decodePolicy(rows.rows[0]) : { ...DEFAULT_POLICY };
 }
-export function providerKey(provider: CodeProvider): string | null {
-  return provider === 'openai' ? process.env.OPENAI_API_KEY?.trim() || null
-    : provider === 'voyage' ? process.env.VOYAGE_API_KEY?.trim() || null : null;
+export function providerConfigured(provider:CodeProvider):boolean {
+  return (provider==='openai'||provider==='voyage')&&credentialConfigured(provider);
 }
 export interface PolicyChange { provider: CodeProvider; expectedRevision: number; acknowledgeCodeUpload?: boolean }
 export function normalizePolicy(raw: unknown): PolicyChange {
@@ -47,7 +47,7 @@ export function normalizePolicy(raw: unknown): PolicyChange {
 export async function changePolicy(projectId: string, raw: unknown): Promise<CodePolicy> {
   const change = normalizePolicy(raw);
   const cloud = change.provider === 'openai' || change.provider === 'voyage';
-  if (cloud && !providerKey(change.provider)) throw new SemanticError('Selected provider key is missing', 409);
+  if (cloud && !providerConfigured(change.provider)) throw new SemanticError('Selected provider key is missing', 409);
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');

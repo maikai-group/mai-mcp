@@ -86,9 +86,6 @@
   "src/decisions.ts": {
     "as-assertion": 6
   },
-  "src/embeddings.ts": {
-    "as-assertion": 1
-  },
   "src/git/sync.ts": {
     "as-assertion": 1
   },

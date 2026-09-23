@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { parse } from 'dotenv';
 import {
   DASHBOARD_PRIVATE_ENV_KEYS,
+  DASHBOARD_PRESERVE_EMPTY_PROVIDER_ENV_KEYS,
   dashboardBuildIdentity,
   dashboardStatus,
   defaultDashboardIO,
@@ -173,7 +174,7 @@ function configuredEnvironment(checkoutRoot: string, inherited: NodeJS.ProcessEn
   const selected: NodeJS.ProcessEnv = {};
   for (const key of DASHBOARD_PRIVATE_ENV_KEYS) {
     const value = Object.hasOwn(inherited, key) ? inherited[key] : fileEnvironment[key];
-    if (value !== undefined && value !== '') selected[key] = safeValue(key, value);
+    if (value !== undefined && (value !== '' || DASHBOARD_PRESERVE_EMPTY_PROVIDER_ENV_KEYS.has(key))) selected[key] = safeValue(key, value);
   }
   return selected;
 }
@@ -181,7 +182,7 @@ function configuredEnvironment(checkoutRoot: string, inherited: NodeJS.ProcessEn
 function privateEnvironmentText(environment: Readonly<NodeJS.ProcessEnv>): string {
   return DASHBOARD_PRIVATE_ENV_KEYS.flatMap(key => {
     const value = environment[key];
-    return value === undefined || value === '' ? [] : [`${key}=${safeValue(key, value)}`];
+    return value === undefined || (value === '' && !DASHBOARD_PRESERVE_EMPTY_PROVIDER_ENV_KEYS.has(key)) ? [] : [`${key}=${safeValue(key, value)}`];
   }).join('\n') + '\n';
 }
 

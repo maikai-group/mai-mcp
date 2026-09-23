@@ -1,7 +1,7 @@
 /** Local-embeddings tier: detection, tagging, mismatch filtering, rebuild,
  * consent. Default suite uses the FAKE embedder — no model download/network;
  * the explicitly gated final describe resets to the real pipeline. */
-import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs'; // readFileSync for the real migration file — os/path were unused (pass-6 N2)
 import { Pool } from 'pg';
 
@@ -39,10 +39,11 @@ afterAll(async () => {
   await admin.query(`DELETE FROM projects WHERE slug = 'emb-local-test'`);
   await admin.query(`DELETE FROM lessons WHERE rule LIKE 'EMBTEST %'`);
   await admin.end();
-  const { getPool } = await import('../db.js');
-  await getPool().end();
+
 });
 beforeEach(async () => {
+  vi.resetModules();
+  await import('../db.js');
   process.env.MAI_EMBEDDINGS = '1';
   delete process.env.OPENAI_API_KEY;
   delete process.env.VOYAGE_API_KEY;
@@ -50,15 +51,19 @@ beforeEach(async () => {
   setLocalEmbedderForTests(async (t) => fakeVec(t));
 });
 
+afterEach(async()=>{const {getPool}=await import('../db.js');await getPool().end();});
+
 describe('tier detection + model ids', () => {
   it('keyless → local; openai key wins; disabled → null', async () => {
     const { currentEmbeddingModelId } = await import('../embeddings.js');
     expect(currentEmbeddingModelId()).toBe('local:bge-small-en-v1.5');
     process.env.OPENAI_API_KEY = 'sk-test';
-    expect(currentEmbeddingModelId()).toBe('openai:text-embedding-3-small');
+    vi.resetModules();
+    expect((await import('../embeddings.js')).currentEmbeddingModelId()).toBe('openai:text-embedding-3-small');
     process.env.MAI_EMBEDDINGS = '0';
     delete process.env.OPENAI_API_KEY;
-    expect(currentEmbeddingModelId()).toBeNull();
+    vi.resetModules();
+    expect((await import('../embeddings.js')).currentEmbeddingModelId()).toBeNull();
   });
   it('embed() routes to the injected local embedder and caches', async () => {
     const { embed } = await import('../embeddings.js');

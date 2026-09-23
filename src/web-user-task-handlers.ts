@@ -34,6 +34,13 @@ function queryBoolean(url: URL, key: string): boolean {
   throw new UserTaskClientError(`query '${key}' must be 0, 1, true, or false`);
 }
 
+function queryPlanId(url: URL): string | undefined {
+  const value = url.searchParams.get('plan');
+  if (value === null) return undefined;
+  if (!UUID_RE.test(value)) throw new UserTaskClientError("query 'plan' must be a UUID");
+  return value.toLowerCase();
+}
+
 function exactStatusBody(body: Record<string, unknown>): {
   taskId: string;
   action: 'complete' | 'reopen' | 'dismiss';
@@ -123,6 +130,7 @@ export function createUserTaskGetHandlers(
         projectId,
         includeHistory: queryBoolean(url, 'history'),
         summaryOnly: queryBoolean(url, 'summary'),
+        planId: queryPlanId(url),
       });
     },
   };

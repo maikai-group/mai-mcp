@@ -9,6 +9,7 @@ const ICONS: Record<Destination, string> = {
   roadmap: 'M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z',
   tasks: 'M5 5h14v14H5zM8 10l2 2 5-5M8 16h8',
   sharing: 'M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.6 10.5l6.8-3.2M8.6 13.5l6.8 3.2',
+  settings: 'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6',
   profile: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c0-3 4-5 8-5s8 2 8 5',
   graph: 'M5 6a2 2 0 100-.01M19 8a2 2 0 100-.01M15 18a2 2 0 100-.01M6.5 6.5l10 1.5M17 9l-2 7',
   search: 'M11 4a7 7 0 105.2 11.7L21 20M11 4a7 7 0 015 12',

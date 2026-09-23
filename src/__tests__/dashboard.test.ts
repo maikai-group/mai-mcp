@@ -1,3 +1,4 @@
+import { JEV_ENV_KEYS } from '../providers/runtime.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -239,6 +240,10 @@ describe('dashboard environment boundary', () => {
     for (const file of sourceFiles) {
       for (const match of fs.readFileSync(file, 'utf8').matchAll(/process\.env\.(MAI_[A-Z_]+)/gu)) derived.add(match[1]);
     }
+    for(const key of Object.values(JEV_ENV_KEYS))derived.add(key);
+    const runtimeTests=fs.readFileSync(path.join(ROOT,'src/__tests__/providers-runtime.test.ts'),'utf8');
+    expect(runtimeTests).toContain('JEV_ENV_KEYS.enabled');
+    expect(runtimeTests).toContain('JEV_ENV_KEYS.model');
     derived.delete('MAI_BRAIN_WEB_LAUNCH_ID');
     expect([...DASHBOARD_SERVER_ENV_KEYS].sort()).toEqual([...derived].sort());
     expect(DASHBOARD_PRIVATE_ENV_KEYS).toEqual([...new Set([...derived, ...DASHBOARD_CONTROLLER_ENV_KEYS, ...DASHBOARD_PROVIDER_ENV_KEYS])].sort());
@@ -263,6 +268,16 @@ describe('dashboard environment boundary', () => {
     expect(io.healthTokens).toEqual(['secret']);
     finish({ code: 0, signal: null });
     expect(await result).toBe(0);
+  });
+
+  it.each(['synthetic-typesafe-secret',''])('forwards private Jev overrides without argv or state leakage (%s)',async key=>{
+    const io=fakeIO({schema:1,phase:'reserved',launchId:LAUNCH,buildSha:BUILD,starterPid:process.pid,reservedAt:'2026-09-10T12:00:00.000Z'});
+    io.privateFile=`TYPESAFE_API_KEY=${key}\nMAI_JEV_ENABLED=\nMAI_JEV_MODEL=\n`;
+    io.env.MAI_CANARY='unrelated';
+    expect(await dashboardRun({envFile:'/private/dashboard.env',launchId:LAUNCH},io)).toBe(0);
+    expect(io.specs[0].env.TYPESAFE_API_KEY).toBe(key);expect(io.specs[0].env.MAI_JEV_ENABLED).toBe('');expect(io.specs[0].env.MAI_JEV_MODEL).toBe('');
+    expect(io.specs[0].env.MAI_CANARY).toBeUndefined();
+    expect(JSON.stringify([io.specs[0].argv,io.stateHistory])).not.toContain('synthetic-typesafe-secret');
   });
 
   it('passes the explicit interactive environment through unchanged without --env-file', async () => {

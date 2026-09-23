@@ -63,21 +63,24 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 
 interface Envelope { ok: boolean; error?: string }
 
-export async function apiGet<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+export async function apiGet<T>(path: string, params?: Record<string, string | number | undefined>, options?: {signal?: AbortSignal}): Promise<T> {
   const merged = { ...(params ?? {}), project: currentProject };
-  const res = await fetch(API + path + buildQuery(merged), { headers: authHeaders() });
-  const json = (await res.json().catch(() => ({ ok: false, error: 'response was not json' }))) as Envelope & T;
+  const res = await fetch(API + path + buildQuery(merged), { headers: authHeaders(), signal: options?.signal });
+  const json = (await res.json().catch((error: unknown) => { if (options?.signal?.aborted) throw error; return { ok: false, error: 'response was not json' }; })) as Envelope & T;
+  options?.signal?.throwIfAborted();
   if (!res.ok || !json.ok) throw new ApiError(json.error ?? `HTTP ${res.status}`, res.status);
   return json;
 }
 
-export async function apiPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
+export async function apiPost<T>(path: string, body: Record<string, unknown>, options?: {signal?: AbortSignal}): Promise<T> {
   const res = await fetch(API + path + buildQuery({ project: currentProject }), {
     method: 'POST',
+    signal: options?.signal,
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const json = (await res.json().catch(() => ({ ok: false, error: 'response was not json' }))) as Envelope & T;
+  const json = (await res.json().catch((error: unknown) => { if (options?.signal?.aborted) throw error; return { ok: false, error: 'response was not json' }; })) as Envelope & T;
+  options?.signal?.throwIfAborted();
   if (!res.ok || !json.ok) throw new ApiError(json.error ?? `HTTP ${res.status}`, res.status);
   return json;
 }

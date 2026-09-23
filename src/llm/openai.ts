@@ -3,6 +3,7 @@
 // output; if a compatible endpoint rejects json_schema, it degrades ONCE (for the
 // life of the process) to prompt-JSON parsing.
 import OpenAI from 'openai';
+import { resolveCredential } from '../providers/runtime.js';
 import { extractJSON } from './json.js';
 import type { JSONSchema, LLMProvider } from './provider.js';
 
@@ -19,20 +20,18 @@ export class OpenAIProvider implements LLMProvider {
     this.name = opts.baseURL ? 'openai-compatible' : 'openai';
   }
 
-  private newClient(): OpenAI {
-    return new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY ?? 'not-needed', // local endpoints ignore this
-      ...(this.baseURL ? { baseURL: this.baseURL } : {}),
-    });
-  }
-
   async completeJSON(args: {
     prompt: string;
     schema: JSONSchema;
     schemaName: string;
     maxTokens: number;
   }): Promise<unknown | null> {
-    const client = this.newClient();
+    let client: OpenAI;
+    try {
+      const key=this.baseURL?process.env.OPENAI_API_KEY??'not-needed':await resolveCredential('openai');
+      if(!this.baseURL&&!key)return null;
+      client=new OpenAI({apiKey:key??'not-needed',baseURL:this.baseURL??'https://api.openai.com/v1'});
+    } catch { console.warn('[mai-llm] OpenAI credential unavailable'); return null; }
 
     if (!this.schemaUnsupported) {
       try {
@@ -49,7 +48,7 @@ export class OpenAIProvider implements LLMProvider {
         return content ? extractJSON(content) : null;
       } catch (err) {
         if (!this.baseURL) {
-          console.warn('[mai-llm] OpenAI completeJSON failed:', err);
+          console.warn('[mai-llm] OpenAI completeJSON failed: provider_error');
           return null;
         }
         // Compatible endpoint likely lacks json_schema — remember + fall through.
@@ -68,7 +67,7 @@ export class OpenAIProvider implements LLMProvider {
       const content = response.choices[0]?.message?.content;
       return content ? extractJSON(content) : null;
     } catch (err) {
-      console.warn('[mai-llm] openai-compatible fallback failed:', err);
+      console.warn('[mai-llm] openai-compatible fallback failed: provider_error');
       return null;
     }
   }

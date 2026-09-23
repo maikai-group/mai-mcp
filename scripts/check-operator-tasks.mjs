@@ -568,8 +568,8 @@ export function auditRoot(root) {
   } else {
     const registered = [...defs, ...coord].sort();
     const classified = [...reads, ...nonReads].sort();
-    if (registered.length !== 47 || classified.length !== 47 || !sameList(registered, classified)) {
-      problems.push(`operator-task tool classification mismatch: ${registered.length}/${classified.length} (want 47/47)`);
+    if (registered.length !== 48 || classified.length !== 48 || !sameList(registered, classified)) {
+      problems.push(`operator-task tool classification mismatch: ${registered.length}/${classified.length} (want 48/48)`);
     }
     if (!reads.includes('mai_user_tasks') || nonReads.includes('mai_user_tasks')) {
       problems.push('mai_user_tasks read classification missing');
@@ -844,7 +844,7 @@ const MUTANTS = [
   { id: 'M13-chat-dependency', file: 'src/operator-tasks.ts', find: "import crypto from 'node:crypto';", replace: "import crypto from 'node:crypto';\nimport './coordination/board.js';", expect: 'operator-task chat/board/scraper dependency forbidden' },
   { id: 'M14-schema-drift', file: 'db/schema.sql', find: 'sort_order            int NOT NULL CHECK (sort_order BETWEEN 0 AND 99),', replace: 'sort_order            int NOT NULL CHECK (sort_order BETWEEN 0 AND 999),', expect: 'operator-task schema/migration parity mismatch' },
   { id: 'M15-project-predicate', file: 'src/operator-tasks.ts', find: 'WHERE id = $1 AND project_id = $2 AND removed_at IS NULL AND ${guard}', replace: 'WHERE id = $1 AND $2::uuid IS NOT NULL AND removed_at IS NULL AND ${guard}', expect: 'operator-task project predicate missing' },
-  { id: 'M16-tool-misclassification', file: 'src/read-budget.ts', find: "  'mai_user_tasks', 'mai_receipts',\n] as const;", replace: '] as const;', expect: 'operator-task tool classification mismatch' },
+  { id: 'M16-tool-misclassification', file: 'src/read-budget.ts', find: "'mai_user_tasks', 'mai_receipts', ", replace: '', expect: 'operator-task tool classification mismatch' },
   { id: 'M17-release-omission', file: 'scripts/release-public.sh', find: 'check-operator-tasks.mjs ', replace: '', expect: 'operator-task release checker omission' },
   { id: 'M18-nonexec-helper-bypass', file: 'src/plans.ts', find: 'await consolidatePlanAliases(client, row, physical.slice(1));', replace: 'void physical;', expect: 'operator-task non-executing branch bypasses shared alias helper' },
   { id: 'M19-task-transfer-removed', file: 'src/plans.ts', find: "await client.query(\n      `UPDATE operator_tasks\n          SET plan_id = $1,\n              source_plan_slug = CASE WHEN source_kind = 'plan' THEN $3 ELSE NULL END\n        WHERE plan_id = $2`,\n      [survivor.id, loser.id, survivor.slug]\n    );", replace: 'void loser;', expect: 'operator-task alias helper task transfer missing' },
@@ -1013,7 +1013,7 @@ function main() {
     process.exit(1);
   }
   console.log(PRODUCER_RECEIPT);
-  console.log('operator-task gate OK (47 tools; 6 indexes)');
+  console.log('operator-task gate OK (48 tools; 6 indexes)');
   if (shouldSelfTest) {
     const failures = selfTest();
     if (failures.length) { for (const failure of failures) console.error(`operator-tasks gate: ${failure}`); process.exit(1); }

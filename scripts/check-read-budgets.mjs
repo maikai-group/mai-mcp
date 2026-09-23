@@ -84,31 +84,59 @@ if (!/await\s+piggyback\(/.test(handlerText)) {
 if (/coordination\.piggybackNudge/.test(handlerText)) {
   fail('tools/call must not reach coordination.piggybackNudge directly — use the injected parameter');
 }
-// Exactly one finalizer call, and it is the returned expression.
-const finalizerCalls = [];
-let nudgeAssignEnd = -1;
-visit(callHandler, (n) => {
-  if (ts.isCallExpression(n) && n.expression.getText() === 'finalizeToolResult') finalizerCalls.push(n);
-  if (ts.isBinaryExpression(n)
-    && n.operatorToken.kind === ts.SyntaxKind.EqualsToken
-    && n.left.getText() === 'nudge'
-    && /await\s+piggyback\(/.test(n.right.getText())) {
-    nudgeAssignEnd = n.getEnd();
+// The one finalizer is assigned after the nudge and returned unchanged. Keep
+// this as a pure predicate so the self-test can mutate source in memory.
+function wireFinalizerViolation(sourceText) {
+  const file = ts.createSourceFile('index.ts', sourceText, ts.ScriptTarget.ES2022, true);
+  let handler = null;
+  visit(file, (n) => {
+    if (ts.isCallExpression(n) && /setRequestHandler$/.test(n.expression.getText(file))
+      && n.arguments.length >= 2 && /['"]tools\/call['"]/.test(n.arguments[0].getText(file))) {
+      handler = n.arguments[1];
+    }
+  });
+  if (!handler || !ts.isArrowFunction(handler) || !ts.isBlock(handler.body)) return 'tools/call handler missing';
+  const calls = [];
+  let nudgeAssignEnd = -1;
+  visit(handler, (n) => {
+    if (ts.isCallExpression(n) && n.expression.getText(file) === 'finalizeToolResult') calls.push(n);
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      && n.left.getText(file) === 'nudge'
+      && /await\s+piggyback\(/.test(n.right.getText(file))) nudgeAssignEnd = n.getEnd();
+  });
+  if (calls.length !== 1) return `tools/call must contain exactly one finalizeToolResult call, found ${calls.length}`;
+  const finalizer = calls[0];
+  if (finalizer.arguments.map((a) => a.getText(file)).join(',').replace(/\s+/g, '')
+    !== 'request.params.name,result,nudge') return 'finalizeToolResult argument order changed';
+  if (nudgeAssignEnd < 0 || finalizer.getStart() < nudgeAssignEnd) return 'finalizer must follow awaited nudge assignment';
+  const declaration = finalizer.parent;
+  if (!ts.isVariableDeclaration(declaration) || declaration.name.getText(file) !== 'delivered'
+    || declaration.initializer !== finalizer || !ts.isVariableDeclarationList(declaration.parent)
+    || !(declaration.parent.flags & ts.NodeFlags.Const)
+    || !ts.isVariableStatement(declaration.parent.parent)
+    || declaration.parent.parent.parent !== handler.body) return 'finalizer must assign const delivered in tools/call';
+  const statements = handler.body.statements;
+  const finalizerAt = statements.indexOf(declaration.parent.parent);
+  const last = statements[statements.length - 1];
+  if (finalizerAt < 0 || !ts.isReturnStatement(last) || last.expression?.getText(file) !== 'delivered') {
+    return 'tools/call must return delivered directly';
   }
-});
-if (finalizerCalls.length !== 1) {
-  fail(`tools/call must contain exactly one finalizeToolResult call, found ${finalizerCalls.length}`);
+  for (const statement of statements.slice(finalizerAt + 1, -1)) {
+    let mutated = false;
+    visit(statement, (n) => {
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+        && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+        && /^delivered(?:\.|\[|$)/.test(n.left.getText(file))) mutated = true;
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n))
+        && /^delivered(?:\.|\[|$)/.test(n.operand.getText(file))) mutated = true;
+      if (ts.isDeleteExpression(n) && /^delivered(?:\.|\[|$)/.test(n.expression.getText(file))) mutated = true;
+    });
+    if (mutated) return 'delivered must not be mutated before return';
+  }
+  return null;
 }
-const finalizer = finalizerCalls[0];
-const args = finalizer.arguments.map((a) => a.getText());
-if (args.join(',').replace(/\s+/g, '') !== 'request.params.name,result,nudge') {
-  fail(`finalizeToolResult must be called as (request.params.name, result, nudge), got (${args.join(', ')})`);
-}
-if (!ts.isReturnStatement(finalizer.parent)) fail('the finalizeToolResult call must be the returned expression');
-if (nudgeAssignEnd < 0) fail('tools/call must assign nudge from the awaited injected parameter');
-if (finalizer.getStart() < nudgeAssignEnd) {
-  fail('finalizeToolResult must run AFTER the nudge assignment (post-nudge order)');
-}
+const wireViolation = wireFinalizerViolation(index.getFullText());
+if (wireViolation) fail(wireViolation);
 
 // ---------- 4: neither dispatch facade caps ----------
 for (const rel of ['src/index.ts', 'src/coordination/index.ts']) {
@@ -126,7 +154,7 @@ for (const rel of ['src/index.ts', 'src/coordination/index.ts']) {
 const indexText = index.getFullText();
 const coordText = src('src/coordination/index.ts').getFullText();
 const EXPECTED_BUDGETED = [
-  ['src/index.ts', /planText\(\s*params\s*,\s*mcpBudget\(\)\s*\)/, 'planText'],
+  ['src/index.ts', /planText\(\s*params\s*,\s*mcpBudget\(\)\s*(?:,|\))/, 'planText'],
   ['src/index.ts', /findingsQuery\(\{[\s\S]*?budget:\s*mcpBudget\(\)[\s\S]*?\}\)/, 'findingsQuery'],
   ['src/index.ts', /unifiedSearch\(\{[\s\S]*?budget:\s*mcpBudget\(\)[\s\S]*?\}\)/, 'unifiedSearch'],
   ['src/index.ts', /projectRecall\([^)]*mcpBudget\(\)\s*\)/, 'projectRecall'],
@@ -142,6 +170,27 @@ for (const [rel, re, name] of EXPECTED_BUDGETED) {
   const text = rel === 'src/index.ts' ? indexText : coordText;
   if (!re.test(text)) fail(`${name} in ${rel} must receive mcpBudget()`);
 }
+
+function planBudgetOwnerViolation(sourceText) {
+  const file = ts.createSourceFile('index.ts', sourceText, ts.ScriptTarget.ES2022, true);
+  let dispatch = null;
+  visit(file, (n) => {
+    if (ts.isVariableDeclaration(n) && n.name.getText(file) === 'handleToolCall'
+      && n.initializer && ts.isArrowFunction(n.initializer)) dispatch = n.initializer;
+  });
+  if (!dispatch) return 'handleToolCall dispatch missing';
+  const calls = [];
+  visit(dispatch, (n) => {
+    if (ts.isCallExpression(n) && n.expression.getText(file) === 'planText') calls.push(n);
+  });
+  if (calls.length !== 1 || calls[0].arguments[0]?.getText(file) !== 'params'
+    || calls[0].arguments[1]?.getText(file).replace(/\s+/g, '') !== 'mcpBudget()') {
+    return 'planText must have one real dispatch owner with mcpBudget() in position two';
+  }
+  return null;
+}
+const planOwnerViolation = planBudgetOwnerViolation(indexText);
+if (planOwnerViolation) fail(planOwnerViolation);
 
 // Plan 43: the tenth owner is pinned to the real tools/call handler, not mere
 // token presence elsewhere in index.ts. This pure predicate is mutation-tested
@@ -311,6 +360,18 @@ console.log(`read-budget wire inventory OK (${budget.MCP_READ_TOOLS.length} read
 
 if (process.argv.includes('--self-test')) {
   const live = fs.readFileSync(path.join(root, 'src/index.ts'), 'utf8');
+  if (wireFinalizerViolation(live)) fail(`self-test: live wire source must conform (${wireFinalizerViolation(live)})`);
+  const wireCall = 'const delivered = finalizeToolResult(request.params.name, result, nudge);';
+  const duplicateWire = live.replace(wireCall, `${wireCall}\n    const second = finalizeToolResult(request.params.name, result, nudge); void second;`);
+  if (duplicateWire === live || !wireFinalizerViolation(duplicateWire)) fail('self-test: second finalizer was NOT rejected');
+  const earlyWire = live.replace(`    ${wireCall}\n`, '').replace('    let nudge = "";', `    ${wireCall}\n    let nudge = "";`);
+  if (earlyWire === live || !wireFinalizerViolation(earlyWire)) fail('self-test: pre-nudge finalizer was NOT rejected');
+  const wrongReturn = live.replace('    return delivered;', '    return result;');
+  if (wrongReturn === live || !wireFinalizerViolation(wrongReturn)) fail('self-test: different returned object was NOT rejected');
+  const missingPlanBudget = live.replace('planText(params, mcpBudget(),', 'planText(params, undefined,');
+  if (missingPlanBudget === live || !planBudgetOwnerViolation(missingPlanBudget)) {
+    fail('self-test: missing planText dispatch budget was NOT rejected');
+  }
   if (primeDispatchViolation(live)) fail(`self-test: live source must conform (${primeDispatchViolation(live)})`);
   const dropped = live.replace(
     'await prime(p.task_description, p.mode ?? "summary", pageBudget())',
